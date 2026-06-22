@@ -7,7 +7,9 @@ root_agent = Agent(
     # LLM agents to determine if they should route
     # a task to this agent. Make it specific enough
     # to differentiate it from peers.
-    description="Helps students learn algebra by guiding them through problem solving steps.",
+    description=(
+        "Helps students learn algebra by guiding them through problem solving steps."
+    ),
     # The instruction parameter is arguably the most
     # critical for shaping an LlmAgent’s behavior. It tells the
     # agent its core task or goal, its personality or persona,

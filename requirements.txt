@@ -1,2 +1,4 @@
 google-adk==2.2.0
 litellm>=1.83.7,<=1.83.14
+ruff
+taskipy

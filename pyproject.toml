@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 88
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.taskipy.tasks]
+format = "ruff format ."
+lint   = "ruff check . --fix"
