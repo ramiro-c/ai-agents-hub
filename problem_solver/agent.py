@@ -1,14 +1,13 @@
 """
-Problem-solving agent with built-in planning capabilities.
-Demonstrates ADK's BuiltInPlanner with ThinkingConfig.
+Problem-solving agent with structured planning.
+Uses ADK's PlanReActPlanner for non-Gemini models.
 """
 
 import os
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
-from google.adk.planners import BuiltInPlanner
-from google.genai import types
+from google.adk.planners import PlanReActPlanner
 
 root_agent = LlmAgent(
     model=LiteLlm(
@@ -34,10 +33,5 @@ For complex problems:
 - Provide reasoning for your recommendations
 
 Be thorough, analytical, and systematic in your approach.""",
-    planner=BuiltInPlanner(
-        thinking_config=types.ThinkingConfig(
-            include_thoughts=True,  # Show reasoning process
-            thinking_budget=2048,  # Large budget for complex thinking
-        )
-    ),
+    planner=PlanReActPlanner(),
 )
