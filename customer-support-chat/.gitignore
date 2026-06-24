@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ADK runtime
+.adk/
+adk_web_log*.txt
+
+# Node
+node_modules/
+dist/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
