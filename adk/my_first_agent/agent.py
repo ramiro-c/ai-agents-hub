@@ -1,6 +1,6 @@
-from google.adk.agents.llm_agent import Agent
+from google.adk.agents import LlmAgent
 
-root_agent = Agent(
+root_agent = LlmAgent(
     model="gemini-2.5-flash",
     name="math_tutor_agent",
     # This description is primarily used by other

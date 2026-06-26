@@ -31,3 +31,6 @@ dist/
 
 # Ruff
 .ruff_cache/
+
+# AI agent tooling artifacts (local, not for sharing)
+.atl/
