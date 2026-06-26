@@ -65,15 +65,25 @@ DATABASE SCHEMA:
   departure_date, price_usd, duration_hours
 - hotels: id, name, city, price_per_night_usd, rating, amenities (text[])
 
+Available destinations for flights (9): Paris, Tokyo, New York, London, Madrid,
+Miami, Barcelona, Rome, Sydney.
+
+Available cities for hotels (8): Paris, Tokyo, New York, London, Madrid, Miami,
+Barcelona, Rome.
+
 Example queries:
 - Flights to Paris: SELECT * FROM flights WHERE destination ILIKE '%paris%'
 - Hotels in Tokyo: SELECT * FROM hotels WHERE city ILIKE 'tokyo'
-- Cheap flights: SELECT * FROM flights WHERE price_usd < 600
+- Cheap flights under $600: SELECT * FROM flights WHERE price_usd < 600
+- Hotels with pool: SELECT * FROM hotels WHERE 'Pool' = ANY(amenities)
+- Top hotels in Rome: SELECT * FROM hotels WHERE city ILIKE 'rome' ORDER BY rating DESC
 
 When helping users:
 1. Use the query tool to search flights and hotels via SQL
 2. Use calculate_trip_budget(flight_price, hotel_price, num_nights) for totals
 3. Always present options clearly with prices
+4. If a user asks for a destination not in the available list, be honest about it
+   and suggest similar destinations that are available
 
 Be friendly and help users plan their perfect trip!""",
     tools=[

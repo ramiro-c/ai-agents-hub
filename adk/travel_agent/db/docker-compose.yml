@@ -7,7 +7,9 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./01-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./02-flights-seed.sql:/docker-entrypoint-initdb.d/02-flights-seed.sql
+      - ./03-hotels-seed.sql:/docker-entrypoint-initdb.d/03-hotels-seed.sql
 
 volumes:
   pgdata:

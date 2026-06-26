@@ -23,6 +23,40 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
 Agent-specific `.env` files (e.g., `adk/math_assistant/.env`) take priority over the root `adk/.env`.
 
+### Database (PostgreSQL)
+
+The `travel_agent` requires a PostgreSQL database. Start it before running the agent:
+
+```bash
+# From the repo root
+docker compose -f adk/travel_agent/db/docker-compose.yml up -d
+```
+
+On first start, the database is automatically seeded with flights and hotels. The init directory (`docker-entrypoint-initdb.d/`) runs SQL files in alphabetical order:
+
+| File | Purpose | Rows |
+|------|---------|------|
+| `01-schema.sql` | Creates `flights` and `hotels` tables + indexes | — |
+| `02-flights-seed.sql` | Seeds 26 flights across 9 destinations | 26 |
+| `03-hotels-seed.sql` | Seeds 24 hotels across 8 cities | 24 |
+
+To add more seed data, create a new file (e.g. `04-cancun-seed.sql`) and mount it in `docker-compose.yml`. Existing data won't be affected — the container only runs init scripts on first start (empty data directory).
+
+To re-seed from scratch:
+
+```bash
+docker compose -f adk/travel_agent/db/docker-compose.yml down -v  # drops the volume
+docker compose -f adk/travel_agent/db/docker-compose.yml up -d    # re-runs init scripts
+```
+
+Stop the database when done:
+
+```bash
+docker compose -f adk/travel_agent/db/docker-compose.yml down
+```
+
+See [`travel_agent/db/README.md`](travel_agent/db/README.md) for the full seed data reference.
+
 ## Agents by Pattern
 
 ### Basic Agent
@@ -51,6 +85,7 @@ Agent-specific `.env` files (e.g., `adk/math_assistant/.env`) take priority over
 | [`research_assistant`](research_assistant/agent.py) | Built-in `google_search` | Answers questions using live Google Search. Demonstrates ADK's built-in tool integration. Requires Gemini 2.0+. |
 | [`math_assistant`](math_assistant/agent.py) | `BuiltInCodeExecutor` | Executes Python code for calculations and math problems. Demonstrates ADK's code execution tool for precision. Requires Gemini 2.0+. |
 | [`file_reader_assistant`](file_reader_assistant/agent.py) | `McpToolset` (filesystem) | Reads and lists files via MCP filesystem server. Demonstrates MCP tool integration with read-only tool filters for safety. Uses OpenRouter via `resolve_model(provider="openrouter")`. |
+| [`travel_agent`](travel_agent/agent.py) | `McpToolset` (postgres) + function tools | Searches flights and hotels via SQL using MCP postgres server, plus a local `calculate_trip_budget` function tool. Demonstrates `McpToolset` integration with `@modelcontextprotocol/server-postgres` and `tool_filter=[\"query\"]`. Requires Docker for PostgreSQL. Uses OpenRouter via `resolve_model(provider=\"openrouter\")`. |
 
 ### Programmatic Runner
 
@@ -109,4 +144,4 @@ adk/.venv/bin/pre-commit run --all-files
 5. Update this README — add your agent under the matching pattern category
 6. Optionally, add a `.env` file in the agent directory for agent-specific overrides
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for conventions.
+See [CONVENTIONS.md](CONVENTIONS.md) for coding conventions.
