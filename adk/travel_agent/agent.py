@@ -91,17 +91,17 @@ def before_tool_callback(tool, args, tool_context):
     return None
 
 
-def after_tool_callback(tool, args, tool_context, result):
+def after_tool_callback(tool, args, tool_context, tool_response):
     try:
         ctx_state = (
             getattr(tool_context, "state", {}) if tool_context is not None else {}
         )
         t0 = ctx_state.get("_t0", time.perf_counter())
         duration_ms = (time.perf_counter() - t0) * 1000
-        if isinstance(result, dict) and "rows" in result:
-            summary = f"rows={len(result['rows'])}"
+        if isinstance(tool_response, dict) and "rows" in tool_response:
+            summary = f"rows={len(tool_response['rows'])}"
         else:
-            summary = str(result)[:200]
+            summary = str(tool_response)[:200]
         logger.info(
             "tool=%s duration_ms=%.1f result=%s",
             tool.name,
