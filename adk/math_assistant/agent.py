@@ -7,10 +7,12 @@ Reference: https://google.github.io/adk-docs/tools/built-in-tools#code-execution
 from google.adk.agents import LlmAgent
 from google.adk.code_executors import BuiltInCodeExecutor  # Import code executor
 
+from model_utils import resolve_model
+
 # Create math assistant with code execution
 
 root_agent = LlmAgent(
-    model="gemini-2.5-flash",  # Must use Gemini 2.0+ for code execution
+    model=resolve_model(provider="gemini"),  # Must use Gemini 2.0+ for code execution
     name="math_assistant",
     description="Helps users with mathematical calculations and analysis.",
     instruction="""

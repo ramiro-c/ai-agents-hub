@@ -8,9 +8,11 @@ Reference: https://google.github.io/adk-docs/tools/built-in-tools#google-search
 from google.adk.agents import LlmAgent
 from google.adk.tools import google_search  # Import Google Search tool
 
+from model_utils import resolve_model
+
 # Create research assistant with Google Search
 root_agent = LlmAgent(
-    model="gemini-2.5-flash",  # Must use Gemini 2.0+ for google_search
+    model=(resolve_model(provider="gemini")),  # Must use Gemini 2.0+ for google_search
     name="research_assistant",
     description="Helps users research topics using Google Search.",
     instruction="""

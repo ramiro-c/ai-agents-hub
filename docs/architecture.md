@@ -74,24 +74,24 @@ Use **LiteLLM** as the model adapter and **OpenRouter** as the model gateway for
 ### Reasoning
 
 - **Model flexibility**: OpenRouter provides access to 200+ models through a single API. LiteLLM normalizes the interface so ADK sees a consistent model shape.
-- **No vendor lock-in**: Agents written with `LiteLlm(model="openrouter/...")` can switch to any OpenRouter model by changing the model string.
-- **Cost optimization**: OpenRouter allows A/B testing models (e.g., `owl-alpha` vs `gemini-flash`) without code changes.
+- **No vendor lock-in**: Agents using `resolve_model(provider="openrouter")` can switch to any OpenRouter model by changing the model string in `model_utils.py`.
+- **Centralized config**: All model selection goes through `adk/model_utils.py` (Strategy pattern). Set `MODEL_PROVIDER` in `adk/.env` and individual agents don't hardcode model strings.
 
 ### Scope
 
-Not all agents use LiteLLM. Gemini-native agents (`my_first_agent`, `research_assistant`, `math_assistant`, `geography_assistant`) use Gemini directly because they depend on Gemini-specific tooling (Google Search, code execution, MCP).
+All agents now use the centralized `resolve_model()` factory. Gemini agents pass `resolve_model(provider="gemini")` explicitly because they depend on Gemini-specific tooling (Google Search, code execution). OpenRouter agents use `resolve_model(provider="openrouter")`.
 
 | Agent | Model Adapter |
 |-------|---------------|
-| `my_first_agent` | Gemini native |
-| `my_config_agent` | Gemini native |
-| `product_extractor` | LiteLLM → OpenRouter |
-| `problem_solver` | LiteLLM → OpenRouter |
-| `research_assistant` | Gemini native (requires Google Search) |
-| `math_assistant` | Gemini native (requires code execution) |
-| `geography_assistant` | Gemini native (requires MCP) |
+| `my_first_agent` | Gemini native (`resolve_model(provider="gemini")`) |
+| `my_config_agent` | Gemini native (YAML — `model: gemini-2.5-flash`) |
+| `product_extractor` | OpenRouter (`resolve_model(provider="openrouter")`) |
+| `problem_solver` | OpenRouter (`resolve_model()`) |
+| `research_assistant` | Gemini native (`resolve_model(provider="gemini")`) |
+| `math_assistant` | Gemini native (`resolve_model(provider="gemini")`) |
+| `file_reader_assistant` | OpenRouter (`resolve_model(provider="openrouter")`) |
 | `programmatic_agent.py` | Gemini native |
-| `customer-support-chat/agent` | LiteLLM → OpenRouter |
+| `customer-support-chat/agent` | OpenRouter |
 
 ## Frontend Architecture
 

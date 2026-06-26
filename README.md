@@ -21,10 +21,12 @@ ai-agents-hub/
 │   ├── problem_solver/           #   PlanReActPlanner vía LiteLLM + OpenRouter
 │   ├── product_extractor/        #   output_schema + Pydantic para extracción estructurada
 │   ├── research_assistant/       #   Google Search integrado como herramienta built-in
-│   ├── geography_assistant/      #   MCP filesystem para leer y listar archivos
+│   ├── file_reader_assistant/     #   MCP filesystem para leer y listar archivos
 │   ├── math_assistant/           #   BuiltInCodeExecutor para cálculos y análisis
+│   ├── model_utils.py             #   Resolución centralizada de modelos (Strategy pattern)
+│   ├── tests/                     #   Tests del módulo model_utils (18 tests)
 │   ├── programmatic_agent.py     #   Runner + InMemorySessionService (sin CLI)
-│   └── README.md                 #   Documentación detallada de los 9 agentes y patrones ADK
+│   └── README.md                 #   Documentación detallada de los agentes y patrones ADK
 │
 ├── langgraph/                    # Experimentos con LangGraph
 │   ├── lesson2.ipynb             #   Email Assistant (clasificación, draft, scheduling)
@@ -97,13 +99,10 @@ cp .env.example agent/.env   # agregar OPENROUTER_API_KEY
 
 ## 🧪 Testing
 
-Actualmente el proyecto usa verificación manual:
-
 - **Lint y formato**: Ruff vía pre-commit hooks se ejecuta en cada `git commit`
+- **Tests unitarios**: `adk/.venv/bin/pytest adk/tests/` (18 tests para `model_utils`)
 - **Agentes ADK**: `adk run <agent>` para prueba interactiva, `adk web <agent>` para inspección visual
 - **LangGraph**: Ejecutar `lesson2.ipynb` paso a paso en Jupyter/VS Code
-
-No hay suite de tests automatizados todavía — es una contribución bienvenida. Para más contexto, ver [CONTRIBUTING.md](CONTRIBUTING.md) y [docs/architecture.md](docs/architecture.md).
 
 ## 🔧 Pre-commit hooks
 

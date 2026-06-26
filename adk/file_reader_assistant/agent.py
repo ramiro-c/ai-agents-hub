@@ -11,6 +11,8 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 
+from model_utils import resolve_model
+
 # Define the folder to allow file access (must be absolute path)
 ALLOWED_PATH = os.path.abspath("./my_files")
 
@@ -19,7 +21,7 @@ os.makedirs(ALLOWED_PATH, exist_ok=True)
 
 # Create the agent with MCP filesystem tools
 root_agent = LlmAgent(
-    model="gemini-2.5-flash",
+    model=resolve_model(),
     name="file_reader_assistant",
     description="Helps users read and explore files using MCP tools.",
     instruction="""  

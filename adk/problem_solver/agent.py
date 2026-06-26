@@ -3,18 +3,13 @@ Problem-solving agent with structured planning.
 Uses ADK's PlanReActPlanner for non-Gemini models.
 """
 
-import os
-
 from google.adk.agents import LlmAgent
-from google.adk.models.lite_llm import LiteLlm
 from google.adk.planners import PlanReActPlanner
 
+from model_utils import resolve_model
+
 root_agent = LlmAgent(
-    model=LiteLlm(
-        model="openrouter/owl-alpha",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        api_base=os.getenv("OPENROUTER_BASE_URL"),
-    ),
+    model=resolve_model(),
     name="strategic_problem_solver",
     description="Solves complex problems using multi-step reasoning and planning",
     instruction="""You are a Strategic Problem Solver.

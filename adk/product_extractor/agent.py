@@ -3,11 +3,10 @@ Product extraction agent with structured JSON output.
 Demonstrates ADK's output_schema with Pydantic BaseModel.
 """
 
-import os
-
 from google.adk.agents import LlmAgent
-from google.adk.models.lite_llm import LiteLlm
 from pydantic import BaseModel, Field
+
+from model_utils import resolve_model
 
 
 # Step 1: Define the output structure with Pydantic
@@ -22,14 +21,7 @@ class ProductInfo(BaseModel):
 
 # Step 2: Create agent with output_schema
 root_agent = LlmAgent(
-    model=LiteLlm(
-        # Specify the OpenRouter model using 'openrouter/' prefix
-        model="openrouter/owl-alpha",
-        # Explicitly provide the API key from environment variables
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        # Explicitly provide the OpenRouter API base URL
-        api_base="https://openrouter.ai/api/v1",
-    ),
+    model=(resolve_model()),
     name="product_extractor",
     description=(
         "Extracts product information from user messages and returns structured JSON"
