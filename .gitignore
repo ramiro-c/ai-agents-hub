@@ -34,3 +34,6 @@ dist/
 
 # AI agent tooling artifacts (local, not for sharing)
 .atl/
+
+# Misc
+.cachebro/

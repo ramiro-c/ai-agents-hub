@@ -1,0 +1,9 @@
+**/.venv
+**/node_modules
+**/__pycache__
+**/dist
+**/static
+**/.env
+agent
+scripts
+README.md
