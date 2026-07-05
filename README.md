@@ -4,6 +4,8 @@
 [![Google ADK](https://img.shields.io/badge/Google%20ADK-2.2.0-4285F4.svg)](https://google.github.io/adk-docs/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)](https://react.dev/)
+[![Vertex AI](https://img.shields.io/badge/Vertex%20AI-4285F4.svg?logo=googlecloud)](https://cloud.google.com/vertex-ai)
+[![Cloud Run](https://img.shields.io/badge/Cloud%20Run-4285F4.svg?logo=googlecloud)](https://cloud.google.com/run)
 
 Monorepo de agentes de IA — experimentos con [Google ADK](https://google.github.io/adk-docs/) y [LangGraph](https://langchain-ai.github.io/langgraph/), y aplicaciones completas.
 
@@ -38,6 +40,13 @@ ai-agents-hub/
 │   ├── frontend/                 #   UI de chat en React + TypeScript
 │   └── scripts/dev.sh            #   Levanta los tres procesos en paralelo
 │
+├── career-coach/                 # Agente ADK + UI para planes de carrera
+│   ├── agent/                    #   Agente ADK con BuiltInPlanner + 3 tools deterministas
+│   ├── backend/                  #   FastAPI: proxya Agent Engine + sirve SPA + sesiones
+│   ├── frontend/                 #   UI de chat en React 19 + TypeScript + Markdown
+│   ├── Dockerfile                #   Multi-stage: build frontend → runtime Cloud Run
+│   └── scripts/dev.sh            #   Levanta backend :8080 + frontend :5173
+│
 ├── docs/
 │   └── architecture.md           # Racional del monorepo, ADK vs LangGraph, LiteLLM/OpenRouter
 │
@@ -46,7 +55,7 @@ ai-agents-hub/
 └── CONTRIBUTING.md               # Guía para contribuir al proyecto
 ```
 
-> 📖 **Documentación por subproyecto**: [ADK →](adk/README.md) &nbsp;|&nbsp; [LangGraph →](langgraph/README.md) &nbsp;|&nbsp; [Customer Support Chat →](customer-support-chat/README.md) &nbsp;|&nbsp; [Arquitectura →](docs/architecture.md) &nbsp;|&nbsp; [Contribuir →](CONTRIBUTING.md)
+> 📖 **Documentación por subproyecto**: [ADK →](adk/README.md) &nbsp;|&nbsp; [LangGraph →](langgraph/README.md) &nbsp;|&nbsp; [Customer Support Chat →](customer-support-chat/README.md) &nbsp;|&nbsp; [Career Coach →](career-coach/README.md) &nbsp;|&nbsp; [Arquitectura →](docs/architecture.md) &nbsp;|&nbsp; [Contribuir →](CONTRIBUTING.md)
 
 ## 🚀 Cómo ejecutar
 
@@ -97,6 +106,22 @@ cp .env.example agent/.env   # agregar OPENROUTER_API_KEY
 ./scripts/dev.sh              # levanta los tres procesos
 ```
 
+### Career Coach
+
+Agente ADK que arma **planes de carrera a N meses** con Gemini 2.5 Flash + BuiltInPlanner. Se deploya a **Vertex AI Agent Engine**, y la UI (React + FastAPI) corre como un único servicio en **Cloud Run**. Usa ADC para auth (sin API keys), contrato JSON en `POST /api/chat`, y sesiones por email sin BD propia.
+
+```
+Browser (Cloud Run) → FastAPI → Vertex AI Agent Engine → Gemini 2.5 Flash + tools
+```
+
+```bash
+cd career-coach
+cp backend/.env.example backend/.env   # completar GOOGLE_CLOUD_PROJECT y AGENT_ENGINE_RESOURCE
+./scripts/dev.sh                        # levanta backend :8080 + frontend :5173
+```
+
+Ver [career-coach/README.md](career-coach/README.md) para setup completo, deploy, troubleshooting y costos.
+
 ## 🧪 Testing
 
 - **Lint y formato**: Ruff vía pre-commit hooks se ejecuta en cada `git commit`
@@ -132,6 +157,7 @@ Cada subdirectorio tiene su propio entorno:
 | `adk/`                  | Python 3.13, google-adk 2.2.0, LiteLLM       |
 | `langgraph/`            | Python 3.13, langchain ≥0.3, langgraph ≥0.4  |
 | `customer-support-chat` | Python 3 (agent + backend) + Node (frontend) |
+| `career-coach` | Python 3.11+ (agent + backend) + Node 20+ (frontend) — Vertex AI + Cloud Run |
 
 ## 🤝 Contribuir
 
