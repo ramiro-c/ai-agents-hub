@@ -10,6 +10,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md`
 
+## Testing Approach
+
+Behavior-first, not strict TDD. For each task: implement first, then run the behavior tests included in the task. Skip every "run test to verify it fails" step — those are optional. Do not add tests beyond the ones written here; the included ones (SQL guard, loop with fake client, smoke test) are the safety net for later phases.
+
 ## Global Constraints
 
 - Python 3.12+; dependency management with `uv` only (no pip installs).
