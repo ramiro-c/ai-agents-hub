@@ -1,0 +1,13 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: soccer
+      POSTGRES_PASSWORD: soccer
+      POSTGRES_DB: soccer
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
