@@ -22,8 +22,9 @@ We replicate the architecture and concepts, not the Oracle stack.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Stack | Open stack, custom loop | Learn agent internals; no framework hiding the loop |
-| LLM | Gemini via raw `google-genai` SDK | $1500 GCP credits available; no ADK — the loop is hand-written |
-| Database | Postgres 16 + pgvector (Docker) | Single layer for data + vectors + memory, mirroring Oracle AI DB's role |
+| LLM | Gemini via raw `google-genai` SDK, backed by Vertex AI | Burns the GCP credits; no ADK — the loop is hand-written |
+| Deployment | Cloud Run + Cloud SQL + Artifact Registry + Secret Manager | Real GCP deployment as the final phase; same pattern already proven in `career-coach` |
+| Database | Postgres 16 + pgvector — Docker locally, Cloud SQL in prod | Single layer for data + vectors + memory, mirroring Oracle AI DB's role; same engine in both environments |
 | Embeddings | `sentence-transformers` local, `all-MiniLM-L6-v2` (384 dims) | Same model family as the workshop, free, no API dependency |
 | Dataset | Kaggle international results (49k matches) | Free, proven, user knows the domain professionally |
 | Scope | Everything, phased | Agent works from phase 1; ML pipeline lands last |
@@ -65,6 +66,7 @@ Each phase: concept first, then code, then tests. The agent chats from phase 1 o
 | 5 | Observability: persist every step of every turn | Debugging agents seriously |
 | 6 | FastAPI + React frontend | From REPL to product |
 | 7 | Full ML pipeline: feature trackers, XGBoost, Optuna; swap predictor | Temporal feature engineering + live inference |
+| 8 | Deploy to GCP: Cloud SQL (pgvector), containerize with Dockerfile, push to Artifact Registry, run on Cloud Run, secrets in Secret Manager | Shipping an agent to production on GCP |
 
 ## Error handling and safety
 
@@ -82,4 +84,4 @@ Each phase: concept first, then code, then tests. The agent chats from phase 1 o
 
 - Oracle AI Database, OCI GenAI, in-DB ONNX embeddings
 - LangChain/LangGraph (the original uses them only as storage adapters)
-- Deployment (Cloud Run can come later; local-first for learning)
+- Kubernetes/GKE, CI/CD pipelines — Cloud Run deploy is manual/scripted, keeping focus on the agent
