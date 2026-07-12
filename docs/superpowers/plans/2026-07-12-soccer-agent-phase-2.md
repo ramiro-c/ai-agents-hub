@@ -13,11 +13,13 @@
 
 ## The three tiers (read this first — it's the whole point)
 
-| Tier | Question it answers | Scope | Retrieval | How it's wired |
-|---|---|---|---|---|
-| **Working** | "What are we talking about right now?" | This session | Recency (last N turns) | Auto-seeded into `history` by `respond()` |
-| **Episodic** | "Have we touched something like this before?" | This session | Similarity (vector) | Auto-recalled and injected as grounding by `respond()` |
-| **Semantic** | "What durable facts do I know?" | Global | Similarity (vector) | Model-controlled via `remember`/`recall` tools |
+
+| Tier         | Question it answers                           | Scope        | Retrieval              | How it's wired                                         |
+| ------------ | --------------------------------------------- | ------------ | ---------------------- | ------------------------------------------------------ |
+| **Working**  | "What are we talking about right now?"        | This session | Recency (last N turns) | Auto-seeded into `history` by `respond()`              |
+| **Episodic** | "Have we touched something like this before?" | This session | Similarity (vector)    | Auto-recalled and injected as grounding by `respond()` |
+| **Semantic** | "What durable facts do I know?"               | Global       | Similarity (vector)    | Model-controlled via `remember`/`recall` tools         |
+
 
 The distinction that trips people up: **episodic is events ("on turn 5 the user asked about Messi"), semantic is distilled knowledge ("the user supports Argentina")**. Working is just short-term recency. Each tier has a different scope, a different retrieval strategy, and a different owner (the runtime vs. the model). Keeping them separate is the lesson.
 
@@ -29,23 +31,29 @@ The distinction that trips people up: **episodic is events ("on turn 5 the user 
 - `memory.py` is storage-only: it must NOT import `google.genai`. Type conversion to genai `Content` lives in `chat.py`.
 - `run_turn` signature and behavior stay exactly as in Phase 0+1.
 
+
+
 ## Testing Approach
 
 Behavior-first (same as Phase 0+1): implement first, then run the behavior tests included in each task. Skip the "verify it fails" steps. Unit tests inject a fake embedder so they're fast and offline; one integration test per task marked `@pytest.mark.integration` exercises the real model/DB.
 
 ---
 
+
+
 ### Task 1: Embeddings module
 
 **Files:**
+
 - Modify: `soccer-analytics-agent/pyproject.toml` (add deps)
 - Create: `soccer-analytics-agent/soccer_agent/embeddings.py`
 - Test: `soccer-analytics-agent/tests/test_embeddings.py`
 
 **Interfaces:**
+
 - Produces: `embeddings.embed(text: str) -> list[float]` (length 384, normalized) and `embeddings.DIM = 384`.
 
-- [ ] **Step 1: Add dependencies**
+- [x] **Step 1: Add dependencies**
 
 In `pyproject.toml`, add to `dependencies`:
 
@@ -57,7 +65,7 @@ In `pyproject.toml`, add to `dependencies`:
 Run: `uv sync`
 Expected: resolves and installs (pulls torch; first run is slow).
 
-- [ ] **Step 2: Implement embeddings.py**
+- [x] **Step 2: Implement embeddings.py**
 
 `soccer_agent/embeddings.py`:
 
@@ -84,7 +92,7 @@ def embed(text: str) -> list[float]:
     return vec.tolist()
 ```
 
-- [ ] **Step 3: Write the behavior test**
+- [x] **Step 3: Write the behavior test**
 
 `tests/test_embeddings.py`:
 
@@ -117,12 +125,12 @@ def test_embed_similar_texts_closer_than_unrelated():
     assert cosine(goal, similar) > cosine(goal, unrelated)
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `uv run pytest tests/test_embeddings.py -v`
 Expected: PASS (first run downloads the model, ~90 MB).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -131,15 +139,19 @@ git commit -m "feat(soccer-agent): local sentence-transformers embeddings"
 
 ---
 
+
+
 ### Task 2: Memory schema
 
 **Files:**
+
 - Modify: `soccer-analytics-agent/db/schema.sql`
 
 **Interfaces:**
+
 - Produces: tables `working_memory`, `episodic_memory`, `semantic_memory` with `vector(384)` columns and cosine HNSW indexes. `db.apply_schema()` already applies this file idempotently.
 
-- [ ] **Step 1: Append the memory tables to schema.sql**
+- [x] **Step 1: Append the memory tables to schema.sql**
 
 Add to the end of `db/schema.sql`:
 
@@ -180,9 +192,10 @@ CREATE INDEX IF NOT EXISTS idx_semantic_embedding
 Run: `uv run python -c "from soccer_agent import db; db.apply_schema(); print('applied')"`
 Expected: `applied`.
 
-- [ ] **Step 3: Verify the tables and vector columns exist**
+- [x] **Step 3: Verify the tables and vector columns exist**
 
 Run:
+
 ```bash
 uv run python -c "
 from soccer_agent import db
@@ -193,9 +206,10 @@ rows = db.connect().execute(
 print(sorted(r[0] for r in rows))
 "
 ```
+
 Expected: `['episodic_memory', 'semantic_memory', 'working_memory']`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -204,13 +218,17 @@ git commit -m "feat(soccer-agent): memory schema (working/episodic/semantic)"
 
 ---
 
+
+
 ### Task 3: Memory module (storage layer)
 
 **Files:**
+
 - Create: `soccer-analytics-agent/soccer_agent/memory.py`
 - Test: `soccer-analytics-agent/tests/test_memory.py`
 
 **Interfaces:**
+
 - Consumes: `db.connect()` (Task 2), `embeddings.embed` (Task 1).
 - Produces (all storage-only, no genai imports):
   - `append_working(session_id: str, role: str, content: str) -> None`
@@ -220,7 +238,7 @@ git commit -m "feat(soccer-agent): memory schema (working/episodic/semantic)"
   - `remember_fact(fact: str) -> None`
   - `search_semantic(query: str, k: int = 3) -> list[dict]` — `{"fact", "score"}`
 
-- [ ] **Step 1: Implement memory.py**
+- [x] **Step 1: Implement memory.py**
 
 `soccer_agent/memory.py`:
 
@@ -354,12 +372,12 @@ def test_episodic_recall_finds_similar_past_turn():
     assert "Maradona" in hits[0]["agent_response"]
 ```
 
-- [ ] **Step 3: Run the test**
+- [x] **Step 3: Run the test**
 
 Run: `uv run pytest tests/test_memory.py -v`
 Expected: PASS (3 passed).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -368,19 +386,23 @@ git commit -m "feat(soccer-agent): three-tier memory storage layer"
 
 ---
 
+
+
 ### Task 4: `remember` and `recall` tools
 
 **Files:**
+
 - Modify: `soccer-analytics-agent/soccer_agent/tools.py`
 - Test: `soccer-analytics-agent/tests/test_tools.py` (add cases)
 
 **Interfaces:**
+
 - Consumes: `memory.remember_fact`, `memory.search_semantic` (Task 3).
 - Produces: two new entries in `TOOL_DECLARATIONS` and `_HANDLERS`:
   - `remember(fact)` → `{"status": "remembered"}`
   - `recall(query)` → `{"facts": [{"fact", "score"}, ...]}`
 
-- [ ] **Step 1: Add the tools to tools.py**
+- [x] **Step 1: Add the tools to tools.py**
 
 Add near the top of `tools.py` (after the existing `from soccer_agent import db`):
 
@@ -452,7 +474,7 @@ _HANDLERS = {
 }
 ```
 
-- [ ] **Step 2: Add behavior tests to test_tools.py**
+- [x] **Step 2: Add behavior tests to test_tools.py**
 
 Append to `tests/test_tools.py`:
 
@@ -471,12 +493,12 @@ def test_remember_then_recall_via_dispatch():
     assert any("Boca" in f["fact"] for f in result["facts"])
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
 Run: `uv run pytest tests/test_tools.py -v`
 Expected: PASS (all, including the new case).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -485,20 +507,24 @@ git commit -m "feat(soccer-agent): remember/recall semantic-memory tools"
 
 ---
 
+
+
 ### Task 5: `respond()` — wire working + episodic memory around the loop
 
 **Files:**
+
 - Create: `soccer-analytics-agent/soccer_agent/chat.py`
 - Modify: `soccer-analytics-agent/soccer_agent/cli.py`
 - Test: `soccer-analytics-agent/tests/test_chat.py`
 
 **Interfaces:**
+
 - Consumes: `loop.run_turn` (Phase 0+1), `memory.*` (Task 3), `google.genai.types`.
 - Produces: `chat.respond(client, session_id: str, user_message: str, model: str) -> str`.
 
 **Design:** `run_turn` stays pure. `respond()` is the memory-aware wrapper: it seeds the loop with working memory (recency), injects episodic recall (similarity) as grounding, runs the turn, then persists the new turn to both working and episodic memory. Semantic memory is handled by the model itself through the Task 4 tools.
 
-- [ ] **Step 1: Implement chat.py**
+- [x] **Step 1: Implement chat.py**
 
 `soccer_agent/chat.py`:
 
@@ -584,7 +610,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 3: Write the behavior test (fake client + fake memory, offline)**
+- [x] **Step 3: Write the behavior test (fake client + fake memory, offline)**
 
 `tests/test_chat.py`:
 
@@ -635,19 +661,20 @@ def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     assert saved["episodes"] == [("Where does he play now?", "He plays for Inter Miami.")]
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `uv run pytest tests/test_chat.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Verify memory end-to-end in the REPL**
+- [x] **Step 5: Verify memory end-to-end in the REPL**
 
 Run: `uv run python -m soccer_agent.cli`
+
 - Say: "Recordá que soy hincha de Racing." (the model should call `remember`)
 - Then: "¿De qué equipo soy hincha?" (the model should answer Racing, via `recall` or working memory)
 - Exit, restart the REPL (new session), ask again about your club → it should still find the fact via semantic `recall` (semantic memory is global, survives sessions), even though working memory is empty.
 
-- [ ] **Step 6: Run the full suite and commit**
+- [x] **Step 6: Run the full suite and commit**
 
 Run: `uv run pytest -q`
 Expected: all pass (unit offline + integration with DB up).
@@ -659,9 +686,12 @@ git commit -m "feat(soccer-agent): memory-aware respond() wrapper and session-ba
 
 ---
 
+
+
 ## Self-review notes
 
 - Spec coverage (Phase 2): working/episodic/semantic memory ✓ (Tasks 2–3, 5), `remember`/`recall` tools ✓ (Task 4), embeddings ✓ (Task 1). Loop stays pure; memory wired via `respond()` (Task 5).
 - Type consistency: `embed -> list[float]`; memory functions return plain tuples/dicts (no genai coupling); `respond(client, session_id, user_message, model) -> str`; `run_turn` unchanged from Phase 0+1.
 - Tier ownership is explicit: working+episodic owned by `respond()` (has `session_id`), semantic owned by the model (via tools, no session needed) — this is why `recall`/`remember` don't need session context threaded through `dispatch`.
 - Deferred to later phases: `vector_search` as a distinct semantic-only tool and hybrid retrieval land in Phase 3; hardening the loop (empty candidates / None parts) and persistent step tracing land in Phase 5.
+
