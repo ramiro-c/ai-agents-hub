@@ -47,6 +47,12 @@ ai-agents-hub/
 │   ├── Dockerfile                #   Multi-stage: build frontend → runtime Cloud Run
 │   └── scripts/dev.sh            #   Levanta backend :8080 + frontend :5173
 │
+├── soccer-analytics-agent/       # Agente de analítica de fútbol con loop manual
+│   ├── soccer_agent/             #   loop.py, tools.py, embeddings, memoria 3-capas
+│   ├── db/schema.sql             #   Postgres + pgvector (matches + memoria vectorial)
+│   ├── scripts/                  #   Carga de datos Kaggle (49k partidos), smoke tests
+│   └── tests/                    #   22 tests (unitarios + integración)
+│
 ├── docs/
 │   └── architecture.md           # Racional del monorepo, ADK vs LangGraph, LiteLLM/OpenRouter
 │
@@ -55,7 +61,7 @@ ai-agents-hub/
 └── CONTRIBUTING.md               # Guía para contribuir al proyecto
 ```
 
-> 📖 **Documentación por subproyecto**: [ADK →](adk/README.md) &nbsp;|&nbsp; [LangGraph →](langgraph/README.md) &nbsp;|&nbsp; [Customer Support Chat →](customer-support-chat/README.md) &nbsp;|&nbsp; [Career Coach →](career-coach/README.md) &nbsp;|&nbsp; [Arquitectura →](docs/architecture.md) &nbsp;|&nbsp; [Contribuir →](CONTRIBUTING.md)
+> 📖 **Documentación por subproyecto**: [ADK →](adk/README.md) &nbsp;|&nbsp; [LangGraph →](langgraph/README.md) &nbsp;|&nbsp; [Customer Support Chat →](customer-support-chat/README.md) &nbsp;|&nbsp; [Career Coach →](career-coach/README.md) &nbsp;|&nbsp; [Soccer Agent →](soccer-analytics-agent/README.md) &nbsp;|&nbsp; [Arquitectura →](docs/architecture.md) &nbsp;|&nbsp; [Contribuir →](CONTRIBUTING.md)
 
 ## 🚀 Cómo ejecutar
 
@@ -122,10 +128,29 @@ cp backend/.env.example backend/.env   # completar GOOGLE_CLOUD_PROJECT y AGENT_
 
 Ver [career-coach/README.md](career-coach/README.md) para setup completo, deploy, troubleshooting y costos.
 
+### Soccer Analytics Agent
+
+Agente de analítica de fútbol con **loop manual** (sin framework de agentes), **memoria de 3 capas** (working/episodic/semantic) y **búsqueda vectorial** con pgvector. Gemini razona y decide qué tool llamar; Postgres + pgvector es la única capa de datos.
+
+```
+CLI REPL → Agent loop (hand-written) → Gemini → tools → Postgres + pgvector
+```
+
+```bash
+cd soccer-analytics-agent
+uv sync --all-groups                     # instalar dependencias
+docker compose up -d                     # Postgres + pgvector
+uv run python scripts/load_data.py       # dataset Kaggle (49k partidos)
+uv run python -m soccer_agent.cli        # chatear con el agente
+```
+
+Ver [soccer-analytics-agent/README.md](soccer-analytics-agent/README.md) para el diseño completo y [docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md](docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md) para la especificación de arquitectura.
+
 ## 🧪 Testing
 
 - **Lint y formato**: Ruff vía pre-commit hooks se ejecuta en cada `git commit`
 - **Tests unitarios**: `adk/.venv/bin/pytest adk/tests/` (18 tests para `model_utils`)
+- **Soccer agent**: `cd soccer-analytics-agent && uv run pytest -q` (22 tests, unitarios + integración con DB)
 - **Agentes ADK**: `adk run <agent>` para prueba interactiva, `adk web <agent>` para inspección visual
 - **LangGraph**: Ejecutar `lesson2.ipynb` paso a paso en Jupyter/VS Code
 
@@ -158,6 +183,7 @@ Cada subdirectorio tiene su propio entorno:
 | `langgraph/`            | Python 3.13, langchain ≥0.3, langgraph ≥0.4  |
 | `customer-support-chat` | Python 3 (agent + backend) + Node (frontend) |
 | `career-coach` | Python 3.11+ (agent + backend) + Node 20+ (frontend) — Vertex AI + Cloud Run |
+| `soccer-analytics-agent` | Python 3.12+, `uv`, Gemini, `sentence-transformers`, Postgres + pgvector |
 
 ## 🤝 Contribuir
 
