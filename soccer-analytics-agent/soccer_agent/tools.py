@@ -2,7 +2,7 @@
 
 import re
 
-from soccer_agent import db
+from soccer_agent import db, memory
 
 MAX_ROWS = 50
 TIMEOUT_MS = 5000
@@ -41,6 +41,23 @@ def sql_query(sql: str) -> dict:
         return {"error": str(exc)}
 
 
+def remember(fact: str) -> dict:
+    """Store a durable fact in semantic memory."""
+    try:
+        memory.remember_fact(fact)
+        return {"status": "remembered"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def recall(query: str) -> dict:
+    """Search durable facts in semantic memory."""
+    try:
+        return {"facts": memory.search_semantic(query, k=3)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 TOOL_DECLARATIONS = [
     {
         "name": "sql_query",
@@ -64,9 +81,45 @@ TOOL_DECLARATIONS = [
             "required": ["sql"],
         },
     },
+    {
+        "name": "remember",
+        "description": (
+            "Store a durable fact about the user or the world in long-term memory "
+            "(e.g. a stated preference). Use for facts worth recalling in future "
+            "conversations, not for one-off details."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": "The fact to store, as a short sentence.",
+                }
+            },
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": (
+            "Search long-term memory for durable facts relevant to a query. "
+            "Use when the user refers to something they may have told you before."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to look up in memory."}
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
-_HANDLERS = {"sql_query": lambda args: sql_query(args["sql"])}
+_HANDLERS = {
+    "sql_query": lambda args: sql_query(args["sql"]),
+    "remember": lambda args: remember(args["fact"]),
+    "recall": lambda args: recall(args["query"]),
+}
 
 
 def dispatch(name: str, args: dict) -> dict:

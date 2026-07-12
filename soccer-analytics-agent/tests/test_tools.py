@@ -47,3 +47,17 @@ def test_sql_query_returns_error_instead_of_raising():
 
 def test_dispatch_unknown_tool():
     assert "error" in dispatch("no_such_tool", {})
+
+
+@pytest.mark.integration
+@requires_db
+def test_remember_then_recall_via_dispatch():
+    from soccer_agent import db
+
+    with db.connect() as conn:
+        conn.execute("DELETE FROM semantic_memory")
+    assert dispatch("remember", {"fact": "The user is a Boca Juniors fan"}) == {
+        "status": "remembered"
+    }
+    result = dispatch("recall", {"query": "what club does the user follow?"})
+    assert any("Boca" in f["fact"] for f in result["facts"])
