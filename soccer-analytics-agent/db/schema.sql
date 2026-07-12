@@ -70,3 +70,20 @@ CREATE TABLE IF NOT EXISTS semantic_memory (
 );
 CREATE INDEX IF NOT EXISTS idx_semantic_embedding
     ON semantic_memory USING hnsw (embedding vector_cosine_ops);
+
+-- --- Retrieval store (Phase 3) ---
+
+CREATE TABLE IF NOT EXISTS match_documents (
+    id BIGSERIAL PRIMARY KEY,
+    match_date DATE NOT NULL,
+    home_team TEXT NOT NULL,
+    away_team TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+    embedding vector(384) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_match_docs_tsv
+    ON match_documents USING GIN (tsv);
+CREATE INDEX IF NOT EXISTS idx_match_docs_embedding
+    ON match_documents USING hnsw (embedding vector_cosine_ops);

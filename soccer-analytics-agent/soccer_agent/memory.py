@@ -4,8 +4,12 @@ from soccer_agent import db
 from soccer_agent.embeddings import embed
 
 
-def _vec(values: list[float]) -> str:
-    """Render an embedding as a pgvector string literal."""
+def render_vector(values: list[float]) -> str:
+    """Render an embedding as a pgvector string literal.
+
+    Public — shared with tools.py and scripts that insert vectors into
+    the DB. Prefer this over manual string construction.
+    """
     return "[" + ",".join(repr(x) for x in values) + "]"
 
 
@@ -35,7 +39,7 @@ def load_working(session_id: str, limit: int = 10) -> list[tuple[str, str]]:
 
 
 def save_episode(session_id: str, user_message: str, agent_response: str) -> None:
-    vec = _vec(embed(f"{user_message}\n{agent_response}"))
+    vec = render_vector(embed(f"{user_message}\n{agent_response}"))
     with db.connect() as conn:
         conn.execute(
             "INSERT INTO episodic_memory "
@@ -46,7 +50,7 @@ def save_episode(session_id: str, user_message: str, agent_response: str) -> Non
 
 
 def recall_episodes(session_id: str, query: str, k: int = 3) -> list[dict]:
-    vec = _vec(embed(query))
+    vec = render_vector(embed(query))
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT user_message, agent_response, "
@@ -65,7 +69,7 @@ def recall_episodes(session_id: str, query: str, k: int = 3) -> list[dict]:
 
 
 def remember_fact(fact: str) -> None:
-    vec = _vec(embed(fact))
+    vec = render_vector(embed(fact))
     with db.connect() as conn:
         conn.execute(
             "INSERT INTO semantic_memory (fact, embedding) VALUES (%s, %s::vector)",
@@ -74,7 +78,7 @@ def remember_fact(fact: str) -> None:
 
 
 def search_semantic(query: str, k: int = 3) -> list[dict]:
-    vec = _vec(embed(query))
+    vec = render_vector(embed(query))
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT fact, 1 - (embedding <=> %s::vector) AS score "

@@ -2,7 +2,7 @@
 
 import re
 
-from soccer_agent import db, memory
+from soccer_agent import db, embeddings, memory
 
 MAX_ROWS = 50
 TIMEOUT_MS = 5000
@@ -54,6 +54,100 @@ def recall(query: str) -> dict:
     """Search durable facts in semantic memory."""
     try:
         return {"facts": memory.search_semantic(query, k=3)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def vector_search(query: str) -> dict:
+    """Semantic-only search over match documents (for comparison with hybrid)."""
+    try:
+        vec = embeddings.embed(query)
+        vec_str = memory.render_vector(vec)
+        with db.connect() as conn:
+            rows = conn.execute(
+                """SELECT id, content, match_date, home_team, away_team,
+                   1 - (embedding <=> %s::vector) AS score
+                   FROM match_documents
+                   ORDER BY embedding <=> %s::vector
+                   LIMIT 5""",
+                (vec_str, vec_str),
+            ).fetchall()
+        return {
+            "results": [
+                {
+                    "id": r[0],
+                    "content": r[1],
+                    "date": str(r[2]),
+                    "teams": f"{r[3]} vs {r[4]}",
+                    "score": round(float(r[5]), 4),
+                }
+                for r in rows
+            ]
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def hybrid_retrieve(query: str) -> dict:
+    """Search match documents with hybrid retrieval (vector + full-text, RRF-fused)."""
+    try:
+        from soccer_agent.retrieval import rrf_fuse
+
+        vec = embeddings.embed(query)
+        vec_str = memory.render_vector(vec)
+
+        with db.connect() as conn:
+            vec_rows = conn.execute(
+                """SELECT id, content, match_date, home_team, away_team,
+                   1 - (embedding <=> %s::vector) AS score
+                   FROM match_documents
+                   ORDER BY embedding <=> %s::vector
+                   LIMIT 20""",
+                (vec_str, vec_str),
+            ).fetchall()
+
+            ts_rows = conn.execute(
+                """SELECT id, content, match_date, home_team, away_team,
+                   ts_rank(tsv, websearch_to_tsquery('english', %s)) AS score
+                   FROM match_documents
+                   WHERE tsv @@ websearch_to_tsquery('english', %s)
+                   ORDER BY score DESC
+                   LIMIT 20""",
+                (query, query),
+            ).fetchall()
+
+        vec_ranked = [
+            {
+                "id": r[0],
+                "content": r[1],
+                "date": str(r[2]),
+                "teams": f"{r[3]} vs {r[4]}",
+                "source": "vector",
+            }
+            for r in vec_rows
+        ]
+        ts_ranked = [
+            {
+                "id": r[0],
+                "content": r[1],
+                "date": str(r[2]),
+                "teams": f"{r[3]} vs {r[4]}",
+                "source": "fulltext",
+            }
+            for r in ts_rows
+        ]
+
+        fused = rrf_fuse(vec_ranked, ts_ranked, k=60, top_n=5)
+        vec_ids = {v["id"] for v in vec_ranked}
+        ts_ids = {t["id"] for t in ts_ranked}
+        for item in fused:
+            sources = []
+            if item["id"] in vec_ids:
+                sources.append("vector")
+            if item["id"] in ts_ids:
+                sources.append("fulltext")
+            item["sources"] = sources
+        return {"results": fused}
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -113,12 +207,45 @@ TOOL_DECLARATIONS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "vector_search",
+        "description": (
+            "Search match documents by meaning (semantic similarity). "
+            "Returns the 5 most semantically relevant matches. "
+            "Best for fuzzy or conceptual queries like 'high-scoring finals'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for."}
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "hybrid_retrieve",
+        "description": (
+            "Search match documents with hybrid retrieval — combines semantic "
+            "meaning (vector) with exact keywords (full-text), fused with RRF. "
+            "Returns the 5 best matches across both methods. Best for queries "
+            "that mix concepts with specific names like 'Argentina World Cup wins'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for."}
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 _HANDLERS = {
     "sql_query": lambda args: sql_query(args["sql"]),
     "remember": lambda args: remember(args["fact"]),
     "recall": lambda args: recall(args["query"]),
+    "vector_search": lambda args: vector_search(args["query"]),
+    "hybrid_retrieve": lambda args: hybrid_retrieve(args["query"]),
 }
 
 
