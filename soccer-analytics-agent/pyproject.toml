@@ -8,6 +8,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "python-dotenv>=1.0",
     "kagglehub>=0.3",
+    "numpy>=1.26",
+    "sentence-transformers>=3.0",
 ]
 
 [dependency-groups]
