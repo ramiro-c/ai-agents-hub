@@ -13,6 +13,23 @@ uv run python -m soccer_agent.cli        # chat with the agent
 
 Copy `.env.example` to `.env` and fill in your Gemini credentials (AI Studio key or Vertex AI) before running the agent.
 
+## One generalist, several specialists
+
+The core design idea: a large generalist LLM orchestrates, while small specialist
+models do one narrow job each — cheaply and locally. A good agent is not one giant
+model doing everything; it is an LLM that knows when to delegate to a tool or a
+specialized model.
+
+| Model | Size | Job | Runs |
+|---|---|---|---|
+| Gemini (LLM) | billions of params | reason, converse, decide which tool to call | Vertex AI (paid API) |
+| MiniLM (`all-MiniLM-L6-v2`) | ~22M params | turn text into a 384-dim meaning vector (embeddings) | local, free |
+| XGBoost (Phase 7) | gradient-boosted trees | predict a match outcome from engineered features | local, free |
+
+SQL search matches what words *say* (exact text); embeddings match what words *mean*
+(semantic similarity). The agent uses both — SQL for exact facts, embeddings for
+memory recall.
+
 ## Docs
 
 - Design spec: `../docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md`
