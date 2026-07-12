@@ -43,11 +43,13 @@ def test_load_csv_inserts_rows_and_converts_na(tmp_path: Path):
         )
         w.writerow(["2099-01-01", "A", "B", "NA", "NA", "Friendly", "X", "Y", "TRUE"])
 
+    # Load into a session-local TEMP table so the real `matches` data is never
+    # touched. The temp table is dropped automatically when the connection closes.
     with db.connect() as conn:
-        conn.execute("TRUNCATE matches")
+        conn.execute("CREATE TEMP TABLE matches_test (LIKE matches INCLUDING ALL)")
         n = load_csv(
             conn,
-            "matches",
+            "matches_test",
             [
                 "match_date",
                 "home_team",
@@ -63,6 +65,6 @@ def test_load_csv_inserts_rows_and_converts_na(tmp_path: Path):
         )
         assert n == 2
         null_scores = conn.execute(
-            "SELECT count(*) FROM matches WHERE home_score IS NULL"
+            "SELECT count(*) FROM matches_test WHERE home_score IS NULL"
         ).fetchone()[0]
     assert null_scores == 1
