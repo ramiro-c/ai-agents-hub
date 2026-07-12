@@ -2,6 +2,8 @@
 
 A soccer analytics chat agent over 49k international matches (1872–today), built with a **hand-written LLM tool loop** — no agent framework. Gemini reasons and calls tools; Postgres + pgvector is the single layer for data, memory, and observability. A learning-first replication of Oracle's `soccer-analytics-agent` workshop on an open, GCP-deployable stack.
 
+> **New here (human or agent)? Read [`CONTEXT.md`](CONTEXT.md) first** — it is the single source of truth for the vision, mental models, architecture, conventions, roadmap, and gotchas.
+
 ## Quickstart
 
 ```bash
