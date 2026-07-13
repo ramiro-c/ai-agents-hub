@@ -169,9 +169,9 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
 | 2 | Three-tier memory + `remember`/`recall` + embeddings | ✅ Done |
 | 3 | Hybrid retrieval: pgvector + Postgres full-text, RRF fusion (49k docs) | ✅ Done |
 | 4 | Elo tracker + `predict_match` v1 (Elo-based heuristic, 336 teams) | ✅ Done |
-| 5 | Observability: persist every step of every turn (trace table) | ⏳ Next |
-| 6 | FastAPI + React frontend | ⬜ Planned |
-| 7 | Full ML pipeline: feature trackers + XGBoost + Optuna; swap predictor | ⬜ Planned |
+| 5 | Observability: persist every step of every turn (trace table) | ✅ Done |
+| 6 | FastAPI + React frontend | ✅ Done |
+| 7 | Full ML pipeline: feature trackers + XGBoost + Optuna; swap predictor | ⏳ Next |
 | 8 | Deploy to GCP: Cloud SQL, Artifact Registry, Cloud Run, Secret Manager | ⬜ Planned |
 
 ## Known deferred items & gotchas
