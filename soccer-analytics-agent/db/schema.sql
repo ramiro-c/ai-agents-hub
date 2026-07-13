@@ -87,3 +87,12 @@ CREATE INDEX IF NOT EXISTS idx_match_docs_tsv
     ON match_documents USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS idx_match_docs_embedding
     ON match_documents USING hnsw (embedding vector_cosine_ops);
+
+-- --- Elo ratings (Phase 4) ---
+
+CREATE TABLE IF NOT EXISTS team_elo (
+    team TEXT PRIMARY KEY,
+    elo DOUBLE PRECISION NOT NULL,
+    matches_played INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -58,6 +58,178 @@ def recall(query: str) -> dict:
         return {"error": str(exc)}
 
 
+def get_team_elo(teams: str) -> dict:
+    """Return current Elo ratings for one or two teams (comma-separated)."""
+    try:
+        with db.connect() as conn:
+            team_list = [t.strip() for t in teams.split(",")]
+            elos = {}
+            not_found = []
+            for team in team_list:
+                row = conn.execute(
+                    "SELECT elo, matches_played FROM team_elo WHERE team = %s",
+                    (team,),
+                ).fetchone()
+                if row:
+                    elos[team] = {"elo": round(float(row[0]), 1), "matches": row[1]}
+                else:
+                    not_found.append(team)
+        return {"elos": elos, "not_found": not_found or None}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def get_team_form(team: str, n: int = 5) -> dict:
+    """Return a team's last N match results (W/D/L)."""
+    try:
+        with db.connect() as conn:
+            rows = conn.execute(
+                """SELECT match_date, home_team, away_team,
+                      home_score, away_score, tournament
+               FROM matches
+               WHERE (home_team = %s OR away_team = %s)
+                 AND home_score IS NOT NULL AND away_score IS NOT NULL
+               ORDER BY match_date DESC
+               LIMIT %s""",
+                (team, team, n),
+            ).fetchall()
+        form = []
+        for row in rows:
+            date, home, away, h_score, a_score, tournament = row
+            is_home = home == team
+            opponent = away if is_home else home
+            scored = h_score if is_home else a_score
+            conceded = a_score if is_home else h_score
+            if scored > conceded:
+                result = "W"
+            elif scored < conceded:
+                result = "L"
+            else:
+                result = "D"
+            form.append(
+                {
+                    "date": str(date),
+                    "opponent": opponent,
+                    "result": result,
+                    "score": f"{scored}-{conceded}",
+                    "venue": "home" if is_home else "away",
+                    "tournament": tournament or "Friendly",
+                }
+            )
+        return {"team": team, "form": form, "last_n": n}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
+    """Return the head-to-head record between two teams."""
+    try:
+        with db.connect() as conn:
+            rows = conn.execute(
+                """SELECT match_date, home_team, away_team,
+                          home_score, away_score, tournament
+                   FROM matches
+                   WHERE ((home_team = %s AND away_team = %s)
+                      OR (home_team = %s AND away_team = %s))
+                     AND home_score IS NOT NULL AND away_score IS NOT NULL
+                   ORDER BY match_date DESC
+                   LIMIT %s""",
+                (team1, team2, team2, team1, n),
+            ).fetchall()
+        wins1, wins2, draws = 0, 0, 0
+        matches = []
+        for row in rows:
+            date, home, away, h_score, a_score, tournament = row
+            if h_score > a_score:
+                winner = home
+            elif h_score < a_score:
+                winner = away
+            else:
+                winner = None
+            if winner == team1:
+                wins1 += 1
+            elif winner == team2:
+                wins2 += 1
+            else:
+                draws += 1
+            matches.append(
+                {
+                    "date": str(date),
+                    "home": home,
+                    "away": away,
+                    "score": f"{h_score}-{a_score}",
+                    "tournament": tournament or "Friendly",
+                }
+            )
+        return {
+            "team1": team1,
+            "team2": team2,
+            "record": {team1: wins1, team2: wins2, "draws": draws},
+            "total": len(matches),
+            "last_matches": matches,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def predict_match(team1: str, team2: str) -> dict:
+    """Predict match outcome using Elo-based probabilities.
+
+    Treats team1 as home (adds home advantage).
+    """
+    try:
+        from soccer_agent.elo import HOME_ADVANTAGE, expected_score
+
+        with db.connect() as conn:
+            r1 = conn.execute(
+                "SELECT elo FROM team_elo WHERE team = %s", (team1,)
+            ).fetchone()
+            r2 = conn.execute(
+                "SELECT elo FROM team_elo WHERE team = %s", (team2,)
+            ).fetchone()
+
+        if r1 is None or r2 is None:
+            missing = [t for t, r in [(team1, r1), (team2, r2)] if r is None]
+            return {"error": f"Unknown team(s): {', '.join(missing)}"}
+
+        elo1, elo2 = float(r1[0]), float(r2[0])
+
+        effective1 = elo1 + HOME_ADVANTAGE
+        effective2 = elo2
+
+        p1_win = expected_score(effective1, effective2)
+        p2_win = expected_score(effective2, effective1)
+
+        elo_diff = abs(elo1 - elo2)
+        draw_factor = max(0, 0.26 - 0.0004 * elo_diff)
+        p_draw = min(draw_factor, 1 - max(p1_win, p2_win))
+
+        total = p1_win + p2_win + p_draw
+        p1_win /= total
+        p2_win /= total
+        p_draw /= total
+
+        return {
+            "team1": team1,
+            "team2": team2,
+            "ratings": {team1: round(elo1, 1), team2: round(elo2, 1)},
+            "elo_diff": round(elo1 - elo2, 1),
+            "home_advantage_applied": True,
+            "probabilities": {
+                f"{team1}_win": round(p1_win, 4),
+                f"{team2}_win": round(p2_win, 4),
+                "draw": round(p_draw, 4),
+            },
+            "prediction_note": (
+                f"{team1} has a {p1_win * 100:.1f}% chance to win, "
+                f"{team2} {p2_win * 100:.1f}%, "
+                f"draw {p_draw * 100:.1f}%"
+            ),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def vector_search(query: str) -> dict:
     """Semantic-only search over match documents (for comparison with hybrid)."""
     try:
@@ -238,6 +410,81 @@ TOOL_DECLARATIONS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "get_team_elo",
+        "description": (
+            "Get current Elo ratings for one or two teams. "
+            "Elo measures relative strength — higher is better, 1500 is average. "
+            "Accepts a single team name or two comma-separated names."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "teams": {
+                    "type": "string",
+                    "description": (
+                        "Team name(s), comma-separated. "
+                        "e.g. 'Argentina' or 'Argentina,France'"
+                    ),
+                }
+            },
+            "required": ["teams"],
+        },
+    },
+    {
+        "name": "get_team_form",
+        "description": (
+            "Return a team's last N match results (default 5). "
+            "Shows date, opponent, result (W/D/L), score, venue, and tournament "
+            "for each match."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "team": {"type": "string", "description": "Team name."},
+                "n": {
+                    "type": "integer",
+                    "description": "Number of recent matches (default 5).",
+                },
+            },
+            "required": ["team"],
+        },
+    },
+    {
+        "name": "get_h2h",
+        "description": (
+            "Return the head-to-head record between two teams. "
+            "Shows overall record (wins/draws) and recent match history."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "team1": {"type": "string", "description": "First team name."},
+                "team2": {"type": "string", "description": "Second team name."},
+                "n": {
+                    "type": "integer",
+                    "description": "Number of recent matches to show (default 10).",
+                },
+            },
+            "required": ["team1", "team2"],
+        },
+    },
+    {
+        "name": "predict_match",
+        "description": (
+            "Predict a match outcome using Elo ratings. Returns win/draw/loss "
+            "probabilities for both teams. Treats team1 as home (adds "
+            "~100 Elo home advantage). Use when asked 'who would win between X and Y'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "team1": {"type": "string", "description": "Home team name."},
+                "team2": {"type": "string", "description": "Away team name."},
+            },
+            "required": ["team1", "team2"],
+        },
+    },
 ]
 
 _HANDLERS = {
@@ -246,6 +493,10 @@ _HANDLERS = {
     "recall": lambda args: recall(args["query"]),
     "vector_search": lambda args: vector_search(args["query"]),
     "hybrid_retrieve": lambda args: hybrid_retrieve(args["query"]),
+    "get_team_elo": lambda args: get_team_elo(args["teams"]),
+    "get_team_form": lambda args: get_team_form(args["team"], args.get("n", 5)),
+    "get_h2h": lambda args: get_h2h(args["team1"], args["team2"], args.get("n", 10)),
+    "predict_match": lambda args: predict_match(args["team1"], args["team2"]),
 }
 
 

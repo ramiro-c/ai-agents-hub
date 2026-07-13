@@ -142,3 +142,87 @@ def test_hybrid_retrieve_fuses_vector_and_text():
     # The seeded doc should appear — check via content match
     contents = [r["content"] for r in result["results"]]
     assert any("Olympique Marsella" in c for c in contents)
+
+
+# --- Phase 4: Elo-based analytical tools ---
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_elo_single():
+    from soccer_agent.tools import get_team_elo
+
+    result = get_team_elo("Argentina")
+    assert "elos" in result
+    assert "Argentina" in result["elos"]
+    assert isinstance(result["elos"]["Argentina"]["elo"], float)
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_elo_two_teams():
+    from soccer_agent.tools import get_team_elo
+
+    result = get_team_elo("Argentina,Brazil")
+    assert len(result["elos"]) == 2
+    assert "Argentina" in result["elos"]
+    assert "Brazil" in result["elos"]
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_elo_unknown():
+    from soccer_agent.tools import get_team_elo
+
+    result = get_team_elo("FakeTeam")
+    assert result["not_found"] == ["FakeTeam"]
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_form():
+    from soccer_agent.tools import get_team_form
+
+    result = get_team_form("Argentina", 3)
+    assert result["team"] == "Argentina"
+    assert len(result["form"]) <= 3
+    for m in result["form"]:
+        assert m["result"] in ("W", "L", "D")
+        assert "opponent" in m
+        assert "score" in m
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_h2h():
+    from soccer_agent.tools import get_h2h
+
+    result = get_h2h("Argentina", "Brazil")
+    assert "record" in result
+    assert result["record"]["draws"] >= 0
+    assert result["total"] > 0
+
+
+@pytest.mark.integration
+@requires_db
+def test_predict_match():
+    from soccer_agent.tools import predict_match
+
+    result = predict_match("Argentina", "France")
+    assert "probabilities" in result
+    probs = result["probabilities"]
+    assert "Argentina_win" in probs
+    assert "France_win" in probs
+    assert "draw" in probs
+    total = sum(probs.values())
+    assert abs(total - 1.0) < 0.01
+    assert "prediction_note" in result
+
+
+@pytest.mark.integration
+@requires_db
+def test_predict_match_via_dispatch():
+    from soccer_agent.tools import dispatch
+
+    result = dispatch("predict_match", {"team1": "Argentina", "team2": "Brazil"})
+    assert "probabilities" in result
