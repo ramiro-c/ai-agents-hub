@@ -76,10 +76,12 @@ respond() — memory-aware wrapper (soccer_agent/chat.py)
 run_turn — pure hand-written loop (soccer_agent/loop.py)
    model -> function_call -> dispatch -> function_response -> repeat
         |
-tools (soccer_agent/tools.py): sql_query (read-only, guarded) | remember | recall
+tools (soccer_agent/tools.py): sql_query | vector_search | hybrid_retrieve | get_team_elo | get_team_form | get_h2h | predict_match | remember | recall
         |
 Postgres 16 + pgvector (docker-compose.yml)
-   matches / goalscorers / shootouts        (Kaggle data)
+   matches / goalscorers / shootouts                  (Kaggle data)
+   match_documents                                    (49k docs, tsvector + vector(384), GIN + HNSW)
+   team_elo                                           (336 teams, materialized Elo from 49k matches)
    working_memory / episodic_memory / semantic_memory  (vector(384), HNSW cosine)
         |
 embeddings (soccer_agent/embeddings.py): MiniLM, local, 384 dims, normalized
@@ -90,16 +92,20 @@ embeddings (soccer_agent/embeddings.py): MiniLM, local, 384 dims, normalized
 | Path | Responsibility |
 |---|---|
 | `soccer_agent/db.py` | Postgres connection + idempotent `apply_schema()` |
-| `soccer_agent/tools.py` | Tool schemas, `sql_query` guard, `remember`/`recall`, `dispatch()` |
+| `soccer_agent/tools.py` | 9 tool schemas + guards + `dispatch()` |
 | `soccer_agent/loop.py` | Pure hand-written agent loop (`run_turn`) — no memory, no framework |
 | `soccer_agent/embeddings.py` | `embed(text) -> list[float]` via MiniLM |
-| `soccer_agent/memory.py` | Storage layer for all three tiers (no genai imports) |
+| `soccer_agent/memory.py` | Storage layer for all three tiers + `render_vector()` (no genai imports) |
+| `soccer_agent/retrieval.py` | `rrf_fuse()` — RRF math, DB-free, k=60 |
+| `soccer_agent/elo.py` | Elo math: `expected_score()`, `k_factor()`, `BASE_ELO=1500` |
 | `soccer_agent/chat.py` | `respond()` — memory-aware wrapper around `run_turn` |
 | `soccer_agent/cli.py` | Terminal REPL entry point |
-| `db/schema.sql` | All tables + pgvector extension + indexes (applied idempotently) |
+| `db/schema.sql` | All tables + pgvector extension + HNSW+GIN indexes |
 | `scripts/load_data.py` | Download Kaggle dataset and load into Postgres |
-| `scripts/smoke_test.py` | One-shot end-to-end check (real Vertex + DB) — a script, not a pytest test |
-| `tests/` | Behavior tests; DB/model ones marked `@pytest.mark.integration` |
+| `scripts/generate_documents.py` | Embed 49k matches as rich-text docs for hybrid retrieval |
+| `scripts/compute_elos.py` | Compute Elo ratings from match history → materialize to team_elo |
+| `scripts/smoke_test.py` | One-shot end-to-end check (real Vertex + DB) |
+| `tests/` | 43 behavior tests (unit + integration, marked `@pytest.mark.integration`) |
 
 ## Conventions (non-negotiable)
 
@@ -161,9 +167,9 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
 | 0 | Docker + schema + Kaggle load | ✅ Done |
 | 1 | Minimal loop: Gemini + `sql_query` + CLI REPL | ✅ Done |
 | 2 | Three-tier memory + `remember`/`recall` + embeddings | ✅ Done |
-| 3 | Hybrid retrieval: pgvector + Postgres full-text, RRF fusion | ⏳ Next |
-| 4 | Elo tracker + `predict_match` v1 (Elo-based heuristic) | ⬜ Planned |
-| 5 | Observability: persist every step of every turn (trace table) | ⬜ Planned |
+| 3 | Hybrid retrieval: pgvector + Postgres full-text, RRF fusion (49k docs) | ✅ Done |
+| 4 | Elo tracker + `predict_match` v1 (Elo-based heuristic, 336 teams) | ✅ Done |
+| 5 | Observability: persist every step of every turn (trace table) | ⏳ Next |
 | 6 | FastAPI + React frontend | ⬜ Planned |
 | 7 | Full ML pipeline: feature trackers + XGBoost + Optuna; swap predictor | ⬜ Planned |
 | 8 | Deploy to GCP: Cloud SQL, Artifact Registry, Cloud Run, Secret Manager | ⬜ Planned |
@@ -187,6 +193,29 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
   `TRUNCATE matches` on the real table and left it with 2 test rows, wiping the
   dataset whenever the suite ran. Fixed by loading into a session-local TEMP table.
   The rule: a test must never mutate data it did not create.
+- **NULL scores in matches table:** some future-dated matches (e.g., friendlies
+  scheduled for 2026) have NULL scores. Tools querying `matches WHERE home_team = X`
+  must add `AND home_score IS NOT NULL` or the NULLs break arithmetic (learned
+  Phase 4).
+
+## Elo rankings (Phase 4)
+
+Top 10 teams by current Elo (computed from 49k matches, 336 teams, as of 2026-07-12):
+
+| # | Team | Elo |
+|---|------|-----|
+  1 | Argentina         | 2136.5 |
+| 2 | Spain             | 2090.4 |
+| 3 | Netherlands       | 2068.3 |
+| 4 | France            | 2062.0 |
+| 5 | Brazil            | 2054.5 |
+| 6 | England           | 2053.7 |
+| 7 | Germany           | 2046.8 |
+| 8 | Italy             | 2022.1 |
+| 9 | Portugal          | 2017.1 |
+| 10 | Uruguay          | 2003.3 |
+
+To refresh rankings: `uv run python scripts/compute_elos.py`
 
 ## How to work on this project
 
@@ -194,6 +223,8 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
   - Spec: `docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md`
   - Phase 0+1 plan: `docs/superpowers/plans/2026-07-11-soccer-agent-phase-0-1.md`
   - Phase 2 plan: `docs/superpowers/plans/2026-07-12-soccer-agent-phase-2.md`
+  - Phase 3 plan: `docs/superpowers/plans/2026-07-12-soccer-agent-phase-3.md`
+  - Phase 4 plan: `docs/superpowers/plans/2026-07-12-soccer-agent-phase-4.md`
 - Workflow for a new phase: brainstorm the design → write a phase plan
   (concept + tasks with concrete code and behavior tests) → implement task by
   task → run `uv run pytest -q` → commit per task.
