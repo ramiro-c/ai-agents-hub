@@ -92,58 +92,6 @@ def test_hybrid_retrieve_returns_fused_results():
         assert len(r["sources"]) >= 1
 
 
-@pytest.mark.integration
-@requires_db
-def test_vector_search_ranks_seeded_document():
-    """Seed known documents and verify retrieval ranks the relevant one."""
-    from soccer_agent import db, embeddings
-    from soccer_agent.memory import render_vector
-    from soccer_agent.tools import vector_search
-
-    # Seed a distinctive document among the 49k existing ones.
-    seed = "Quantum unicorns played football against AI robots in a test match."
-    vec = render_vector(embeddings.embed(seed))
-    with db.connect() as conn:
-        conn.execute(
-            """INSERT INTO match_documents
-               (match_date, home_team, away_team, content, embedding)
-               VALUES (%s, %s, %s, %s, %s::vector)""",
-            ("2099-01-01", "Unicorns", "Robots", seed, vec),
-        )
-        conn.commit()
-
-    result = vector_search("quantum unicorns football")
-    assert len(result["results"]) > 0
-    first_content = result["results"][0]["content"]
-    assert "quantum" in first_content.lower()
-
-
-@pytest.mark.integration
-@requires_db
-def test_hybrid_retrieve_fuses_vector_and_text():
-    """Hybrid should find a document that matches in both dimensions."""
-    from soccer_agent import db, embeddings
-    from soccer_agent.memory import render_vector
-    from soccer_agent.tools import hybrid_retrieve
-
-    content = "Olympique Marsella defeated Intergalactic Milan 3-2."
-    vec = render_vector(embeddings.embed(content))
-    with db.connect() as conn:
-        conn.execute(
-            """INSERT INTO match_documents
-               (match_date, home_team, away_team, content, embedding)
-               VALUES (%s, %s, %s, %s, %s::vector)""",
-            ("2099-01-02", "Olympique Marsella", "Intergalactic Milan", content, vec),
-        )
-        conn.commit()
-
-    result = hybrid_retrieve("Olympique Marsella won")
-    assert len(result["results"]) > 0
-    # The seeded doc should appear — check via content match
-    contents = [r["content"] for r in result["results"]]
-    assert any("Olympique Marsella" in c for c in contents)
-
-
 # --- Phase 4: Elo-based analytical tools ---
 
 

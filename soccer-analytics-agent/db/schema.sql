@@ -96,3 +96,14 @@ CREATE TABLE IF NOT EXISTS team_elo (
     matches_played INT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Agent trace: per-step observability for every turn
+CREATE TABLE IF NOT EXISTS agent_trace (
+    id BIGSERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    turn_id INT NOT NULL,
+    step INT NOT NULL,
+    content JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_session
+    ON agent_trace (session_id, turn_id, step);

@@ -43,7 +43,9 @@ def test_run_turn_dispatches_tool_then_answers(monkeypatch):
         )
     )
 
-    answer, history = run_turn(fake, [], "How many matches are there?", model="test")
+    answer, history, steps = run_turn(
+        fake, [], "How many matches are there?", model="test"
+    )
 
     assert calls == [("sql_query", {"sql": "SELECT count(*) FROM matches"})]
     assert answer == "There are 49,000 matches."
@@ -53,6 +55,6 @@ def test_run_turn_dispatches_tool_then_answers(monkeypatch):
 
 def test_run_turn_plain_answer_no_tools():
     fake = SimpleNamespace(models=FakeModels([_response([types.Part(text="Hi!")])]))
-    answer, history = run_turn(fake, [], "hello", model="test")
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
     assert answer == "Hi!"
     assert len(history) == 2

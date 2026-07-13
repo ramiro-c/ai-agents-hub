@@ -27,9 +27,12 @@ Behavior-first, not strict TDD. For each task: implement first, then run the beh
 
 ---
 
+
+
 ### Task 1: Project scaffold
 
 **Files:**
+
 - Create: `soccer-analytics-agent/pyproject.toml`
 - Create: `soccer-analytics-agent/.env.example`
 - Create: `soccer-analytics-agent/.gitignore`
@@ -37,10 +40,11 @@ Behavior-first, not strict TDD. For each task: implement first, then run the beh
 - Create: `soccer-analytics-agent/README.md`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: installable package `soccer_agent`; env conventions used by every later task.
 
-- [ ] **Step 1: Create the project**
+- [x] **Step 1: Create the project**
 
 `soccer-analytics-agent/pyproject.toml`:
 
@@ -97,12 +101,12 @@ __pycache__/
 
 `README.md`: title, one-paragraph description, quickstart (`uv sync`, `docker compose up -d`, `uv run python scripts/load_data.py`, `uv run python -m soccer_agent.cli`).
 
-- [ ] **Step 2: Verify it installs**
+- [x] **Step 2: Verify it installs**
 
 Run: `cd soccer-analytics-agent && uv sync --all-groups && uv run python -c "import soccer_agent; print('ok')"`
 Expected: `ok`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -111,19 +115,23 @@ git commit -m "feat(soccer-agent): scaffold uv project"
 
 ---
 
+
+
 ### Task 2: Postgres + pgvector in Docker, schema
 
 **Files:**
+
 - Create: `soccer-analytics-agent/docker-compose.yml`
 - Create: `soccer-analytics-agent/db/schema.sql`
 - Create: `soccer-analytics-agent/soccer_agent/db.py`
 - Test: `soccer-analytics-agent/tests/test_db.py`
 
 **Interfaces:**
+
 - Consumes: `DATABASE_URL` env convention from Task 1.
 - Produces: `soccer_agent.db.connect() -> psycopg.Connection` (caller closes; use as context manager) and `soccer_agent.db.apply_schema() -> None`.
 
-- [ ] **Step 1: Write docker-compose and schema**
+- [x] **Step 1: Write docker-compose and schema**
 
 `docker-compose.yml`:
 
@@ -188,7 +196,7 @@ CREATE INDEX IF NOT EXISTS idx_matches_away ON matches (away_team);
 CREATE INDEX IF NOT EXISTS idx_goalscorers_scorer ON goalscorers (scorer);
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `tests/test_db.py`:
 
@@ -222,12 +230,12 @@ def test_schema_creates_tables():
     assert {"matches", "goalscorers", "shootouts"} <= names
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `docker compose up -d && sleep 5 && uv run pytest tests/test_db.py -v`
 Expected: FAIL with `AttributeError` / import error (`db.connect` not defined).
 
-- [ ] **Step 4: Implement db.py**
+- [x] **Step 4: Implement db.py**
 
 `soccer_agent/db.py`:
 
@@ -257,12 +265,12 @@ def apply_schema() -> None:
         conn.execute(SCHEMA_PATH.read_text())
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_db.py -v`
 Expected: PASS (1 passed).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -271,17 +279,21 @@ git commit -m "feat(soccer-agent): postgres+pgvector compose, schema and db help
 
 ---
 
+
+
 ### Task 3: Kaggle data download + load
 
 **Files:**
+
 - Create: `soccer-analytics-agent/scripts/load_data.py`
 - Test: `soccer-analytics-agent/tests/test_load_data.py`
 
 **Interfaces:**
+
 - Consumes: `db.connect()`, `db.apply_schema()` from Task 2.
 - Produces: populated `matches`, `goalscorers`, `shootouts` tables; helper `load_csv(conn, table: str, columns: list[str], csv_path: Path) -> int` (returns row count).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/test_load_data.py`:
 
@@ -324,12 +336,12 @@ def test_load_csv_inserts_rows_and_converts_na(tmp_path: Path):
 
 Note: `scripts/` needs an empty `scripts/__init__.py` so the test can import it.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_load_data.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scripts.load_data'`.
 
-- [ ] **Step 3: Implement the loader**
+- [x] **Step 3: Implement the loader**
 
 `scripts/__init__.py`: empty. `scripts/load_data.py`:
 
@@ -386,22 +398,22 @@ if __name__ == "__main__":
 
 Note: the Kaggle slug keeps its historical name but the dataset is updated through 2024+. If `minute` arrives as a float string like `"90.0"`, Postgres COPY will reject it — in that case convert in `load_csv`: `v = str(int(float(v)))` for the minute column. Only add this if the real load fails.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_load_data.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Run the real load**
+- [x] **Step 5: Run the real load**
 
 Run: `uv run python scripts/load_data.py`
 Expected: three lines printing row counts; `matches` around 49,000, `goalscorers` around 47,000, `shootouts` around 650.
 
-- [ ] **Step 6: Sanity-check the data**
+- [x] **Step 6: Sanity-check the data**
 
 Run: `uv run python -c "from soccer_agent import db; print(db.connect().execute('SELECT max(match_date) FROM matches').fetchone())"`
 Expected: a date in 2024 or later.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -410,20 +422,24 @@ git commit -m "feat(soccer-agent): kaggle dataset loader"
 
 ---
 
+
+
 ### Task 4: Read-only `sql_query` tool
 
 **Files:**
+
 - Create: `soccer-analytics-agent/soccer_agent/tools.py`
 - Test: `soccer-analytics-agent/tests/test_tools.py`
 
 **Interfaces:**
+
 - Consumes: `db.connect()` from Task 2.
 - Produces:
   - `validate_sql(sql: str) -> str` — returns the cleaned SQL or raises `ValueError`.
   - `sql_query(sql: str) -> dict` — `{"columns": [...], "rows": [[...], ...]}` or `{"error": "..."}`.
   - `TOOL_DECLARATIONS: list[dict]` and `dispatch(name: str, args: dict) -> dict` for the loop.
 
-- [ ] **Step 1: Write the failing tests (pure validation first — no DB needed)**
+- [x] **Step 1: Write the failing tests (pure validation first — no DB needed)**
 
 `tests/test_tools.py`:
 
@@ -476,12 +492,12 @@ def test_dispatch_unknown_tool():
     assert "error" in dispatch("no_such_tool", {})
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_tools.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'soccer_agent.tools'`.
 
-- [ ] **Step 3: Implement tools.py**
+- [x] **Step 3: Implement tools.py**
 
 `soccer_agent/tools.py`:
 
@@ -561,12 +577,12 @@ def dispatch(name: str, args: dict) -> dict:
         return {"error": str(exc)}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_tools.py -v`
 Expected: PASS (all).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -575,17 +591,21 @@ git commit -m "feat(soccer-agent): read-only sql_query tool with guards"
 
 ---
 
+
+
 ### Task 5: The agent loop
 
 **Files:**
+
 - Create: `soccer-analytics-agent/soccer_agent/loop.py`
 - Test: `soccer-analytics-agent/tests/test_loop.py`
 
 **Interfaces:**
+
 - Consumes: `tools.TOOL_DECLARATIONS`, `tools.dispatch` from Task 4.
 - Produces: `run_turn(client, history: list, user_message: str, model: str) -> tuple[str, list]` — returns (final answer text, updated history). `client` is a `genai.Client` (or a fake with the same `models.generate_content` shape — this is the dependency-injection seam for tests).
 
-- [ ] **Step 1: Write the failing test with a fake client**
+- [x] **Step 1: Write the failing test with a fake client**
 
 `tests/test_loop.py`:
 
@@ -640,12 +660,12 @@ def test_run_turn_plain_answer_no_tools():
     assert len(history) == 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_loop.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'soccer_agent.loop'`.
 
-- [ ] **Step 3: Implement loop.py**
+- [x] **Step 3: Implement loop.py**
 
 `soccer_agent/loop.py`:
 
@@ -701,12 +721,12 @@ def run_turn(client, history: list, user_message: str, model: str) -> tuple[str,
     return "I could not finish within the tool-call limit.", history
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_loop.py -v`
 Expected: PASS (2 passed).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add soccer-analytics-agent
@@ -715,17 +735,21 @@ git commit -m "feat(soccer-agent): hand-written gemini tool loop"
 
 ---
 
+
+
 ### Task 6: CLI REPL + end-to-end smoke test
 
 **Files:**
+
 - Create: `soccer-analytics-agent/soccer_agent/cli.py`
 - Create: `soccer-analytics-agent/scripts/smoke_test.py`
 
 **Interfaces:**
+
 - Consumes: `loop.run_turn` from Task 5.
 - Produces: `python -m soccer_agent.cli` interactive REPL; `scripts/smoke_test.py` non-interactive check.
 
-- [ ] **Step 1: Implement the REPL**
+- [x] **Step 1: Implement the REPL**
 
 `soccer_agent/cli.py`:
 
@@ -761,7 +785,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Implement the smoke test**
+- [x] **Step 2: Implement the smoke test**
 
 `scripts/smoke_test.py`:
 
@@ -796,17 +820,17 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 3: Run the smoke test (needs `.env` with credentials and the DB loaded)**
+- [x] **Step 3: Run the smoke test (needs** `.env` **with credentials and the DB loaded)**
 
 Run: `uv run python scripts/smoke_test.py`
 Expected: a grounded answer mentioning Argentina's match/win counts, `tool rounds >= 1`, and `SMOKE TEST OK`.
 
-- [ ] **Step 4: Try the REPL interactively**
+- [x] **Step 4: Try the REPL interactively**
 
 Run: `uv run python -m soccer_agent.cli`
 Ask: "¿Quién le ganó a Brasil en mundiales desde 2000?" — verify the answer cites real matches.
 
-- [ ] **Step 5: Run the full suite and commit**
+- [x] **Step 5: Run the full suite and commit**
 
 Run: `uv run pytest -v`
 Expected: all tests pass (integration tests run because the DB is up).
@@ -818,7 +842,10 @@ git commit -m "feat(soccer-agent): cli repl and smoke test"
 
 ---
 
+
+
 ## Self-review notes
 
 - Spec coverage (phase 0+1 only): Docker+schema ✓ (Task 2), Kaggle load ✓ (Task 3), read-only guarded `sql_query` ✓ (Task 4), hand-written loop with tool dispatch and error-as-tool-result ✓ (Tasks 4–5), CLI REPL ✓ (Task 6). Memory, retrieval, Elo, observability, API, ML, deploy are later phases with their own plans.
 - Types consistent: `dispatch(name, args) -> dict`, `run_turn(client, history, user_message, model) -> (str, list)` used identically across tasks.
+

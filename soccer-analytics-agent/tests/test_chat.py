@@ -22,7 +22,7 @@ class FakeModels:
 
 
 def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
-    saved = {"working": [], "episodes": []}
+    saved = {"working": [], "episodes": [], "trace": []}
     monkeypatch.setattr(
         chat.memory,
         "load_working",
@@ -45,6 +45,12 @@ def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     monkeypatch.setattr(
         chat.memory, "save_episode", lambda s, u, a: saved["episodes"].append((u, a))
     )
+    monkeypatch.setattr(chat.trace, "get_last_turn_id", lambda s: 0)
+    monkeypatch.setattr(
+        chat.trace,
+        "save_step",
+        lambda s, t, st, c: saved["trace"].append((t, st, c)),
+    )
 
     fake = SimpleNamespace(models=FakeModels("He plays for Inter Miami."))
     answer = chat.respond(fake, "sess-1", "Where does he play now?", model="test")
@@ -63,3 +69,6 @@ def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     assert saved["episodes"] == [
         ("Where does he play now?", "He plays for Inter Miami.")
     ]
+    # tracing was wired — at least one step saved (the model answer)
+    assert len(saved["trace"]) >= 1
+    assert saved["trace"][0][2]["kind"] == "answer"
