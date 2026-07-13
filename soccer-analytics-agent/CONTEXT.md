@@ -204,16 +204,16 @@ Top 10 teams by current Elo (computed from 49k matches, 336 teams, as of 2026-07
 
 | # | Team | Elo |
 |---|------|-----|
-  1 | Argentina         | 2136.5 |
-| 2 | Spain             | 2090.4 |
-| 3 | Netherlands       | 2068.3 |
-| 4 | France            | 2062.0 |
-| 5 | Brazil            | 2054.5 |
-| 6 | England           | 2053.7 |
-| 7 | Germany           | 2046.8 |
-| 8 | Italy             | 2022.1 |
-| 9 | Portugal          | 2017.1 |
-| 10 | Uruguay          | 2003.3 |
+| 1 | Argentina         | 2136.5 |
+| 2 | Spain             | 2124.5 |
+| 3 | France            | 2081.3 |
+| 4 | England           | 2000.1 |
+| 5 | Colombia          | 1983.9 |
+| 6 | Brazil            | 1963.5 |
+| 7 | Portugal          | 1951.5 |
+| 8 | Netherlands       | 1933.1 |
+| 9 | Morocco           | 1924.8 |
+| 10 | Switzerland       | 1924.1 |
 
 To refresh rankings: `uv run python scripts/compute_elos.py`
 
