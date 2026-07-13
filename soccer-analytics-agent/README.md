@@ -32,6 +32,52 @@ SQL search matches what words *say* (exact text); embeddings match what words *m
 (semantic similarity). The agent uses both — SQL for exact facts, embeddings for
 memory recall.
 
+## Key Concepts
+
+### Embedding = Vector
+
+An **embedding** is a dense list of floats (a vector) that captures the meaning of
+text in a learned semantic space. MiniLM maps any sentence to 384 numbers. Texts
+with similar meaning end up close to each other in this space — measured by cosine
+distance (the angle between vectors).
+
+We work with the same embedding in three forms:
+
+| Representation | Example | Where |
+|---|---|---|
+| Python `list[float]` | `[0.12, -0.08, 0.34, ...]` | `embeddings.embed(text)` |
+| pgvector string literal | `'[0.12,-0.08,0.34,...]'` | `memory.render_vector(vec)` |
+| Postgres native `vector(384)` | `::vector` cast in SQL | schema, INSERTs, `<=>` operator |
+
+### HNSW (Hierarchical Navigable Small World)
+
+The algorithm behind our `USING hnsw` vector indexes. Instead of comparing a query
+against every document (O(n) full scan), HNSW builds a layered graph:
+
+- **Layer 0**: every vector is a node, connected to its nearest neighbors (local streets).
+- **Upper layers**: progressively fewer nodes with longer-range edges (highways).
+
+Search starts at the top layer, greedily hops toward the nearest node, then descends
+a layer and repeats — like zooming from country → city → neighborhood → street.
+Result: ~99% recall in O(log n) time instead of O(n).
+
+### RRF (Reciprocal Rank Fusion)
+
+Combines two ranked result lists (e.g., vector search + full-text search) without
+tuning weights. Formula: `RRF(doc) = Σ 1 / (k + rank)` with `k = 60`.
+
+It only cares about **position** (1st, 2nd, 3rd…), not raw scores — making it
+immune to different score scales between vector and text engines. A document ranked
+3rd in both lists beats one ranked 1st in one and 20th in the other. RRF rewards
+consensus.
+
+### Why hybrid beats semantic-only
+
+Vector search understands *meaning* ("scored a goal" matches "found the net") but
+misses exact terms. Full-text search (`tsvector`) catches exact names and phrases
+("Lionel Messi" vs "Messi, Lionel") but misses synonyms. **Hybrid retrieval** runs
+both and fuses results via RRF — each covers the other's blind spots.
+
 ## Docs
 
 - Design spec: `../docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md`
