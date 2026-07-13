@@ -10,6 +10,8 @@ dependencies = [
     "kagglehub>=0.3",
     "numpy>=1.26",
     "sentence-transformers>=3.0",
+    "fastapi>=0.139.0",
+    "uvicorn>=0.51.0",
 ]
 
 [dependency-groups]
