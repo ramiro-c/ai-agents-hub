@@ -153,6 +153,31 @@ def test_get_h2h():
 
 @pytest.mark.integration
 @requires_db
+def test_get_h2h_with_draws_does_not_error():
+    """Regression: draws trigger a shootout lookup that must run on a live
+    connection, not one already closed by the surrounding `with` block."""
+    from soccer_agent.tools import get_h2h
+
+    # Argentina vs Germany has drawn matches in the record, exercising the
+    # shootout-resolution branch.
+    result = get_h2h("Argentina", "Germany")
+    assert "error" not in result, result
+    assert result["record"]["draws"] > 0
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_form_with_draws_does_not_error():
+    """Regression: a drawn result triggers the shootout lookup, which must
+    run before the DB connection is closed."""
+    from soccer_agent.tools import get_team_form
+
+    result = get_team_form("Germany", 20)
+    assert "error" not in result, result
+
+
+@pytest.mark.integration
+@requires_db
 def test_predict_match():
     from soccer_agent.tools import predict_match
 

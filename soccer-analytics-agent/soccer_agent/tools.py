@@ -25,7 +25,7 @@ def validate_sql(sql: str) -> str:
 
 
 def sql_query(sql: str) -> dict:
-    """Run a read-only query with a timeout and row cap."""
+    """Run a read-only PostgreSQL query with a timeout and row cap."""
     try:
         cleaned = validate_sql(sql)
         with db.connect() as conn:
@@ -93,37 +93,38 @@ def get_team_form(team: str, n: int = 5) -> dict:
                LIMIT %s""",
                 (team, team, n),
             ).fetchall()
-        form = []
-        for row in rows:
-            date, home, away, h_score, a_score, tournament = row
-            is_home = home == team
-            opponent = away if is_home else home
-            scored = h_score if is_home else a_score
-            conceded = a_score if is_home else h_score
-            if scored > conceded:
-                result = "W"
-            elif scored < conceded:
-                result = "L"
-            else:
-                result = "D"
-                # Check if draw was resolved by penalty shootout
-                shoot = conn.execute(
-                    """SELECT winner FROM shootouts
-                       WHERE match_date = %s AND home_team = %s AND away_team = %s""",
-                    (date, home, away),
-                ).fetchone()
-                if shoot:
-                    result = "W" if shoot[0] == team else "L"
-            form.append(
-                {
-                    "date": str(date),
-                    "opponent": opponent,
-                    "result": result,
-                    "score": f"{scored}-{conceded}",
-                    "venue": "home" if is_home else "away",
-                    "tournament": tournament or "Friendly",
-                }
-            )
+            form = []
+            for row in rows:
+                date, home, away, h_score, a_score, tournament = row
+                is_home = home == team
+                opponent = away if is_home else home
+                scored = h_score if is_home else a_score
+                conceded = a_score if is_home else h_score
+                if scored > conceded:
+                    result = "W"
+                elif scored < conceded:
+                    result = "L"
+                else:
+                    result = "D"
+                    # Check if draw was resolved by penalty shootout
+                    shoot = conn.execute(
+                        "SELECT winner FROM shootouts "
+                        "WHERE match_date = %s AND home_team = %s "
+                        "AND away_team = %s",
+                        (date, home, away),
+                    ).fetchone()
+                    if shoot:
+                        result = "W" if shoot[0] == team else "L"
+                form.append(
+                    {
+                        "date": str(date),
+                        "opponent": opponent,
+                        "result": result,
+                        "score": f"{scored}-{conceded}",
+                        "venue": "home" if is_home else "away",
+                        "tournament": tournament or "Friendly",
+                    }
+                )
         return {"team": team, "form": form, "last_n": n}
     except Exception as exc:
         return {"error": str(exc)}
@@ -144,39 +145,40 @@ def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
                    LIMIT %s""",
                 (team1, team2, team2, team1, n),
             ).fetchall()
-        wins1, wins2, draws = 0, 0, 0
-        matches = []
-        for row in rows:
-            date, home, away, h_score, a_score, tournament = row
-            if h_score > a_score:
-                winner = home
-            elif h_score < a_score:
-                winner = away
-            else:
-                winner = None
-                # Check if draw was resolved by penalty shootout
-                shoot = conn.execute(
-                    """SELECT winner FROM shootouts
-                       WHERE match_date = %s AND home_team = %s AND away_team = %s""",
-                    (date, home, away),
-                ).fetchone()
-                if shoot:
-                    winner = shoot[0]
-            if winner == team1:
-                wins1 += 1
-            elif winner == team2:
-                wins2 += 1
-            else:
-                draws += 1
-            matches.append(
-                {
-                    "date": str(date),
-                    "home": home,
-                    "away": away,
-                    "score": f"{h_score}-{a_score}",
-                    "tournament": tournament or "Friendly",
-                }
-            )
+            wins1, wins2, draws = 0, 0, 0
+            matches = []
+            for row in rows:
+                date, home, away, h_score, a_score, tournament = row
+                if h_score > a_score:
+                    winner = home
+                elif h_score < a_score:
+                    winner = away
+                else:
+                    winner = None
+                    # Check if draw was resolved by penalty shootout
+                    shoot = conn.execute(
+                        "SELECT winner FROM shootouts "
+                        "WHERE match_date = %s AND home_team = %s "
+                        "AND away_team = %s",
+                        (date, home, away),
+                    ).fetchone()
+                    if shoot:
+                        winner = shoot[0]
+                if winner == team1:
+                    wins1 += 1
+                elif winner == team2:
+                    wins2 += 1
+                else:
+                    draws += 1
+                matches.append(
+                    {
+                        "date": str(date),
+                        "home": home,
+                        "away": away,
+                        "score": f"{h_score}-{a_score}",
+                        "tournament": tournament or "Friendly",
+                    }
+                )
         return {
             "team1": team1,
             "team2": team2,
@@ -347,9 +349,8 @@ TOOL_DECLARATIONS = [
             "Use this tool ONLY when no specialized tool (get_h2h, get_team_form, "
             "predict_match, get_team_elo) covers the question. "
             "Run a read-only SQL SELECT against the PostgreSQL soccer database. "
-            "Use PostgreSQL syntax — NOT SQLite. "
-            "Date filtering: use EXTRACT(YEAR FROM match_date), NOT strftime. "
-            "Case-insensitive text: use ILIKE (e.g. tournament ILIKE '%world cup%'). "
+            "For year filters use EXTRACT(YEAR FROM match_date); for "
+            "case-insensitive text use ILIKE (e.g. tournament ILIKE '%world cup%'). "
             "Tables: "
             "matches(match_date, home_team, away_team, home_score, away_score, "
             "tournament, city, country, neutral), "
