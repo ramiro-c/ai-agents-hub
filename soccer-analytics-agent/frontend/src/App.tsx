@@ -1,236 +1,218 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { getMemory, getTrace, sendChat, type ToolCall } from "./api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HealthPill } from "./components/HealthPill";
+import { ChatColumn } from "./components/ChatColumn";
+import { AnalyticsPanel } from "./components/AnalyticsPanel";
+import { buildSnapshot } from "./lib/analytics";
+import { sendChat, pollTrace, getHealth, ApiError } from "./api";
+import type { HealthStatus, Message } from "./lib/types";
 
 const SESSION_KEY = "soccer_agent_session_id";
 
-type Message =
-  | { role: "user"; text: string }
-  | { role: "assistant"; answer: string; tools: ToolCall[] };
+let msgCounter = 0;
+const nextId = () => `m${++msgCounter}-${Date.now()}`;
 
-function randomId() {
-  return crypto.randomUUID();
+function uid(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // fallback for environments without crypto
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function initSessionId(): string {
+  try {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) return stored;
+    const id = uid();
+    localStorage.setItem(SESSION_KEY, id);
+    return id;
+  } catch {
+    // localStorage unavailable — use in-memory only
+    console.warn(
+      "localStorage is not available. Session ID will not persist across tabs.",
+    );
+    return uid();
+  }
 }
 
 export default function App() {
-  const [sessionId, setSessionId] = useState(() => {
-    const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) return stored;
-    const id = randomId();
-    localStorage.setItem(SESSION_KEY, id);
-    return id;
-  });
+  const [sessionId, setSessionId] = useState(initSessionId);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [memory, setMemory] = useState<{ role: string; content: string }[]>([]);
-  const [trace, setTrace] = useState<
-    { step: number; kind: string; content: unknown }[]
-  >([]);
-  const [activeTab, setActiveTab] = useState<"memory" | "trace">("memory");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus>("connecting");
 
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
+  const turnRef = useRef(0);
+
+  // ── Health polling (T-025) ──
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+    let active = true;
 
-  function handleNewSession() {
-    const id = randomId();
-    localStorage.setItem(SESSION_KEY, id);
-    setSessionId(id);
-    setMessages([]);
-    setMemory([]);
-    setTrace([]);
-    setError(null);
-  }
-
-  async function loadMemory() {
-    try {
-      const data = await getMemory(sessionId);
-      setMemory(data);
-    } catch {
-      setMemory([]);
+    async function poll() {
+      try {
+        await getHealth();
+        if (active) setHealthStatus("healthy");
+      } catch {
+        if (active) setHealthStatus("unhealthy");
+      }
     }
-  }
 
-  async function loadTrace() {
-    try {
-      const data = await getTrace(sessionId);
-      setTrace(data);
-    } catch {
-      setTrace([]);
-    }
-  }
+    poll();
+    const id = window.setInterval(poll, 20_000);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
-    setInput("");
-    setError(null);
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text },
-      { role: "assistant", answer: "", tools: [] },
-    ]);
-    setLoading(true);
+  // ── Send message handler (T-023 + T-024) ──
+  const handleSend = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || busy) return;
 
-    try {
-      const response = await sendChat(text, sessionId);
-      setMessages((prev) =>
-        prev.slice(0, -1).concat({
+      const sid = sessionRef.current;
+      const userMsg: Message = { id: nextId(), role: "user", text: trimmed };
+
+      // Optimistic: show user message immediately
+      setMessages((prev) => [...prev, userMsg]);
+      setBusy(true);
+
+      try {
+        // 1. Send to backend
+        const chatResp = await sendChat(trimmed, sid);
+
+        // Update session ID if backend gave a new one
+        if (chatResp.session_id && chatResp.session_id !== sid) {
+          setSessionId(chatResp.session_id);
+          try {
+            localStorage.setItem(SESSION_KEY, chatResp.session_id);
+          } catch { /* storage unavailable */ }
+        }
+
+        // 2. Compute turn ID (ref-based, never stale)
+        turnRef.current += 1;
+        const turnId = turnRef.current;
+
+        const assistantMsg: Message = {
+          id: nextId(),
           role: "assistant",
-          answer: response.answer,
-          tools: response.tools,
-        }),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }
+          text: chatResp.answer || "(empty reply)",
+          traceStatus: "loading",
+        };
 
+        setMessages((prev) => [...prev, assistantMsg]);
+
+        // 3. Poll trace endpoint for tool calls
+        const currentSid = chatResp.session_id || sid;
+        const trace = await pollTrace(currentSid, turnId);
+
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === "assistant") {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                trace: trace ?? [],
+                traceStatus: trace ? "loaded" : "unavailable",
+              },
+            ];
+          }
+          return prev;
+        });
+      } catch (err) {
+        const errorText =
+          err instanceof Error
+            ? err.message
+            : "An unexpected error occurred. Please try again.";
+
+        // Check for 404 → session expired, regenerate
+        if (err instanceof ApiError && err.status === 404) {
+          const newId = uid();
+          setSessionId(newId);
+          try {
+            localStorage.setItem(SESSION_KEY, newId);
+          } catch { /* storage unavailable */ }
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "assistant",
+              text: "Session expired. A new session has been created. Please try your message again.",
+              isError: true,
+            },
+          ]);
+        } else {
+          // General error — show inline error bubble
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "assistant",
+              text: errorText,
+              isError: true,
+            },
+          ]);
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, messages],
+  );
+
+  // ── Analytics snapshot (derived from all messages) ──
+  const snapshot = useMemo(() => buildSnapshot(messages), [messages]);
+
+  // ── Render ──
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <h1>Soccer Agent</h1>
-          <span className="session-id">Session: {sessionId.slice(0, 8)}…</span>
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line-soft bg-bg/90 px-4 py-3 backdrop-blur-sm sm:px-6">
+        <div className="flex items-center gap-3">
+          <div className="leading-tight">
+            <h1 className="text-[15px] font-semibold tracking-tight text-fg">
+              Soccer Analytics Agent
+            </h1>
+            <p className="font-mono text-[10.5px] tracking-wide text-fg-faint">
+              Gemini · Postgres + pgvector · 49K matches
+            </p>
+          </div>
         </div>
-
-        <button className="new-chat-btn" onClick={handleNewSession}>
-          + New Chat
-        </button>
-
-        <div className="tabs">
+        <div className="flex items-center gap-3">
+          <HealthPill status={healthStatus} />
           <button
-            className={activeTab === "memory" ? "active" : ""}
+            type="button"
             onClick={() => {
-              setActiveTab("memory");
-              loadMemory();
+              const newId = uid();
+              setSessionId(newId);
+              setMessages([]);
+              turnRef.current = 0;
+              try {
+                localStorage.setItem(SESSION_KEY, newId);
+              } catch { /* storage unavailable */ }
             }}
+            disabled={busy}
+            className="rounded-lg border border-line-soft bg-surface px-3 py-1.5 text-[12px] text-fg-dim transition-colors hover:border-accent hover:text-fg disabled:opacity-40"
           >
-            Memory
-          </button>
-          <button
-            className={activeTab === "trace" ? "active" : ""}
-            onClick={() => {
-              setActiveTab("trace");
-              loadTrace();
-            }}
-          >
-            Trace
+            New Chat
           </button>
         </div>
+      </header>
 
-        <div className="panel">
-          {activeTab === "memory" ? (
-            memory.length === 0 ? (
-              <p className="empty">No memory yet. Send a message to populate working memory.</p>
-            ) : (
-              <ul className="memory-list">
-                {memory.map((m, i) => (
-                  <li key={i}>
-                    <span className={`role ${m.role}`}>{m.role}</span>
-                    <span className="content">{m.content.slice(0, 100)}</span>
-                  </li>
-                ))}
-              </ul>
-            )
-          ) : trace.length === 0 ? (
-            <p className="empty">No trace yet.</p>
-          ) : (
-            <div className="trace-list">
-              {trace.map((t) => (
-                <div key={t.step} className="trace-step">
-                  <div className="trace-head">
-                    <span className="step">Step {t.step}</span>
-                    <span className="kind">{t.kind}</span>
-                  </div>
-                  <pre>{JSON.stringify(t.content, null, 2)}</pre>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </aside>
-
-      <main className="chat">
-        <header className="chat-header">
-          <h2>Soccer Analytics Agent</h2>
-          <p>Gemini · Postgres + pgvector · 49K matches</p>
-        </header>
-
-        <div className="messages">
-          {messages.length === 0 ? (
-            <div className="empty-state">
-              <h2>Ask me about international football</h2>
-              <p>
-                Try: "Who won the 2022 World Cup?", "What's Argentina's Elo rating?",
-                "Predict Argentina vs France", "Show me Brazil's last 5 matches"
-              </p>
-            </div>
-          ) : (
-            messages.map((msg, i) =>
-              msg.role === "user" ? (
-                <div key={i} className="bubble user">
-                  <span className="label">You</span>
-                  <p>{msg.text}</p>
-                </div>
-              ) : (
-                <div key={i} className="bubble assistant">
-                  <span className="label">Agent</span>
-                  {msg.tools.length > 0 && (
-                    <details className="tools-panel">
-                      <summary>Tools ({msg.tools.length})</summary>
-                      {msg.tools.map((t, j) => (
-                        <div key={j} className="tool">
-                          <code>{t.name}</code>
-                          <pre className="args">{JSON.stringify(t.args, null, 2)}</pre>
-                          {t.response !== undefined && (
-                            <pre className="response">
-                              {JSON.stringify(t.response, null, 2)}
-                            </pre>
-                          )}
-                        </div>
-                      ))}
-                    </details>
-                  )}
-                  <div className="answer">
-                    {loading && i === messages.length - 1 ? (
-                      <p className="thinking">{msg.answer || "Thinking…"}</p>
-                    ) : msg.answer ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.answer}
-                      </ReactMarkdown>
-                    ) : null}
-                  </div>
-                </div>
-              ),
-            )
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {error && <div className="error">{error}</div>}
-
-        <form className="composer" onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about matches, teams, Elo ratings..."
-            disabled={loading}
-            autoFocus
-          />
-          <button type="submit" disabled={loading || !input.trim()}>
-            Send
-          </button>
-        </form>
+      {/* Split layout: conversation + analytics panel */}
+      <main className="mx-auto grid w-full max-w-[1400px] flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <ChatColumn messages={messages} busy={busy} onSend={handleSend} />
+        <aside className="hidden border-l border-line-soft bg-surface/30 lg:block">
+          <div className="sticky top-[57px] h-[calc(100vh-57px)] p-5">
+            <AnalyticsPanel snapshot={snapshot} />
+          </div>
+        </aside>
       </main>
     </div>
   );

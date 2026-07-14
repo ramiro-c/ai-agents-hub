@@ -106,6 +106,14 @@ def get_team_form(team: str, n: int = 5) -> dict:
                 result = "L"
             else:
                 result = "D"
+                # Check if draw was resolved by penalty shootout
+                shoot = conn.execute(
+                    """SELECT winner FROM shootouts
+                       WHERE match_date = %s AND home_team = %s AND away_team = %s""",
+                    (date, home, away),
+                ).fetchone()
+                if shoot:
+                    result = "W" if shoot[0] == team else "L"
             form.append(
                 {
                     "date": str(date),
@@ -146,6 +154,14 @@ def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
                 winner = away
             else:
                 winner = None
+                # Check if draw was resolved by penalty shootout
+                shoot = conn.execute(
+                    """SELECT winner FROM shootouts
+                       WHERE match_date = %s AND home_team = %s AND away_team = %s""",
+                    (date, home, away),
+                ).fetchone()
+                if shoot:
+                    winner = shoot[0]
             if winner == team1:
                 wins1 += 1
             elif winner == team2:
@@ -328,7 +344,13 @@ TOOL_DECLARATIONS = [
     {
         "name": "sql_query",
         "description": (
-            "Run a read-only SQL SELECT against the soccer database. Tables: "
+            "Use this tool ONLY when no specialized tool (get_h2h, get_team_form, "
+            "predict_match, get_team_elo) covers the question. "
+            "Run a read-only SQL SELECT against the PostgreSQL soccer database. "
+            "Use PostgreSQL syntax — NOT SQLite. "
+            "Date filtering: use EXTRACT(YEAR FROM match_date), NOT strftime. "
+            "Case-insensitive text: use ILIKE (e.g. tournament ILIKE '%world cup%'). "
+            "Tables: "
             "matches(match_date, home_team, away_team, home_score, away_score, "
             "tournament, city, country, neutral), "
             "goalscorers(match_date, home_team, away_team, team, scorer, minute, "
@@ -341,7 +363,7 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "sql": {
                     "type": "string",
-                    "description": "A single SELECT or WITH statement.",
+                    "description": "A SELECT or WITH statement (PostgreSQL).",
                 }
             },
             "required": ["sql"],
@@ -368,8 +390,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "recall",
         "description": (
-            "Search long-term memory for durable facts relevant to a query. "
-            "Use when the user refers to something they may have told you before."
+            "Use this tool when the user refers to things they mentioned in "
+            "previous conversations. "
+            "Searches long-term memory for durable facts relevant to a query."
         ),
         "parameters": {
             "type": "object",
@@ -413,8 +436,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_team_elo",
         "description": (
-            "Get current Elo ratings for one or two teams. "
-            "Elo measures relative strength — higher is better, 1500 is average. "
+            "Use this tool when the user asks about Elo ratings or relative "
+            "team strength. "
+            "Returns current Elo ratings for one or two teams. "
             "Accepts a single team name or two comma-separated names."
         ),
         "parameters": {
@@ -434,8 +458,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_team_form",
         "description": (
-            "Return a team's last N match results (default 5). "
-            "Shows date, opponent, result (W/D/L), score, venue, and tournament "
+            "Use this tool when the user asks about a single team's recent results, "
+            "last N matches, or current form. "
+            "Returns date, opponent, result (W/D/L), score, venue, and tournament "
             "for each match."
         ),
         "parameters": {
@@ -453,8 +478,9 @@ TOOL_DECLARATIONS = [
     {
         "name": "get_h2h",
         "description": (
-            "Return the head-to-head record between two teams. "
-            "Shows overall record (wins/draws) and recent match history."
+            "Use this tool when the user asks about head-to-head, previous meetings, "
+            "or the record between two specific teams. "
+            "Returns overall record (wins/draws) and recent match history."
         ),
         "parameters": {
             "type": "object",
@@ -472,9 +498,10 @@ TOOL_DECLARATIONS = [
     {
         "name": "predict_match",
         "description": (
-            "Predict a match outcome using Elo ratings. Returns win/draw/loss "
-            "probabilities for both teams. Treats team1 as home (adds "
-            "~100 Elo home advantage). Use when asked 'who would win between X and Y'."
+            "Use this tool when the user asks who will win or wants outcome "
+            "probabilities between two teams. "
+            "Predicts match outcome using Elo ratings, returning win/draw/loss "
+            "probabilities. Treats team1 as home (adds ~100 Elo home advantage)."
         ),
         "parameters": {
             "type": "object",

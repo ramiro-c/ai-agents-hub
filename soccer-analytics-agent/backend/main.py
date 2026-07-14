@@ -131,7 +131,14 @@ async def get_trace(session_id: str):
     steps = trace.get_session_trace(session_id)
     return TraceResponse(
         session_id=session_id,
-        trace=[TraceStep(turn_id=s[0], step=s[1], content=s[2]) for s in steps],
+        trace=[
+            TraceStep(
+                turn_id=s["turn_id"],
+                step=s["step"],
+                content=s["content"],
+            )
+            for s in steps
+        ],
     )
 
 
