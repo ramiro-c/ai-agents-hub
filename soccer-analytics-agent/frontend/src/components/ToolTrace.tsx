@@ -85,7 +85,7 @@ function ToolCard({ call }: { call: ToolCall }) {
   const visual = renderVisual(call);
 
   return (
-    <div className="rounded-xl border border-line-soft bg-surface p-3">
+    <div className="min-w-0 rounded-xl border border-line-soft bg-surface p-3">
       {/* Header */}
       <div className="mb-2 flex items-center gap-2">
         <ToolIcon name={call.name} />
@@ -100,7 +100,7 @@ function ToolCard({ call }: { call: ToolCall }) {
       </div>
 
       {/* Body */}
-      <div className="ml-1 border-l-2 border-line-soft pl-3">
+      <div className="ml-1 min-w-0 border-l-2 border-line-soft pl-3">
         {err ? (
           <p className="rounded-lg border border-rose/40 bg-rose/10 px-3 py-2 font-mono text-[11.5px] text-rose">
             {String(call.result.error)}
@@ -130,7 +130,7 @@ function ToolTraceBase({ trace }: Props) {
   if (!trace || trace.length === 0) return null;
 
   return (
-    <div className="mt-3 grid gap-2">
+    <div className="mt-3 grid min-w-0 gap-2">
       <div className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-fg-faint">
         {trace.length} tool {trace.length > 1 ? "calls" : "call"}
       </div>

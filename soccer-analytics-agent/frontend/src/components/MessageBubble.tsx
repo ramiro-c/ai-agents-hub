@@ -21,7 +21,7 @@ export function MessageBubble({ message }: Props) {
 
       {/* Bubble */}
       <div
-        className={`max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed ${
+        className={`min-w-0 max-w-[85%] rounded-2xl px-4 py-3 text-[14px] leading-relaxed ${
           isUser
             ? "rounded-br-md bg-accent/20 text-fg"
             : message.isError
