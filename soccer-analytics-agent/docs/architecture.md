@@ -14,10 +14,10 @@ flowchart TB
     end
 
     subgraph runrt["Cloud Run container"]
-        API["FastAPI<br/>/chat /predict /health /memory /trace"]
+        API["FastAPI<br/>/api/health /api/chat<br/>/api/sessions/{id}/memory /api/sessions/{id}/trace<br/>/api/teams /api/teams/{name}"]
         RESP["respond() — memory-aware wrapper"]
         LOOP["run_turn — hand-written tool loop"]
-        TOOLS["tools<br/>sql_query, hybrid_retrieve, vector_search,<br/>predict_match, get_elo, remember, recall"]
+        TOOLS["tools<br/>sql_query, hybrid_retrieve, vector_search, predict_match,<br/>get_team_elo, get_team_form, get_h2h, remember, recall"]
         MINI["MiniLM embedder<br/>baked into image"]
         XGB["XGBoost predictor<br/>baked into image"]
     end
@@ -80,14 +80,20 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Q["User question"] --> D{"What shape is it?"}
-    D -->|"exact / structured / aggregate"| SQL["sql_query<br/>precise, complete, verifiable"]
-    D -->|"fuzzy / semantic / no clean WHERE"| HR["hybrid_retrieve<br/>meaning-based recall"]
+    D -->|"head-to-head between two teams"| H2H["get_h2h<br/>specialist"]
+    D -->|"a team's recent results"| FORM["get_team_form<br/>specialist"]
+    D -->|"a team's strength rating"| ELO["get_team_elo<br/>specialist"]
     D -->|"who will win / prediction"| PM["predict_match<br/>XGBoost specialist"]
+    D -->|"exact / structured / aggregate<br/>(no specialist fits)"| SQL["sql_query<br/>precise, complete, verifiable"]
+    D -->|"fuzzy / semantic / no clean WHERE"| HR["hybrid_retrieve<br/>meaning-based recall"]
     D -->|"something the user told me before"| RC["recall / remember<br/>semantic memory"]
 
-    SQL --> A["Gemini composes the final answer"]
-    HR --> A
+    H2H --> A["Gemini composes the final answer"]
+    FORM --> A
+    ELO --> A
     PM --> A
+    SQL --> A
+    HR --> A
     RC --> A
 ```
 
