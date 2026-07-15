@@ -189,7 +189,9 @@ def test_predict_match():
     assert "draw" in probs
     total = sum(probs.values())
     assert abs(total - 1.0) < 0.01
-    assert "prediction_note" in result
+    # "prediction_note" is Elo-specific; predict_match may now serve the
+    # XGBoost path instead, which does not include it. Not part of the
+    # documented tool contract (only the probabilities keys are).
 
 
 @pytest.mark.integration
@@ -199,3 +201,27 @@ def test_predict_match_via_dispatch():
 
     result = dispatch("predict_match", {"team1": "Argentina", "team2": "Brazil"})
     assert "probabilities" in result
+
+
+@pytest.mark.integration
+@requires_db
+def test_predict_match_contract_has_probability_keys():
+    from soccer_agent.tools import predict_match
+
+    result = predict_match("Argentina", "France")
+    assert "probabilities" in result, result
+    probs = result["probabilities"]
+    assert "Argentina_win" in probs
+    assert "France_win" in probs
+    assert "draw" in probs
+    assert abs(sum(probs.values()) - 1.0) < 0.01
+
+
+@pytest.mark.integration
+@requires_db
+def test_predict_match_elo_still_available():
+    from soccer_agent.tools import predict_match_elo
+
+    result = predict_match_elo("Argentina", "Brazil")
+    assert "probabilities" in result
+    assert abs(sum(result["probabilities"].values()) - 1.0) < 0.01

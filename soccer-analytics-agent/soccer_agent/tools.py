@@ -190,7 +190,7 @@ def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
         return {"error": str(exc)}
 
 
-def predict_match(team1: str, team2: str) -> dict:
+def predict_match_elo(team1: str, team2: str) -> dict:
     """Predict match outcome using Elo-based probabilities.
 
     Treats team1 as home (adds home advantage).
@@ -246,6 +246,22 @@ def predict_match(team1: str, team2: str) -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+def predict_match(team1: str, team2: str) -> dict:
+    """Predict match outcome: XGBoost model first, Elo heuristic as fallback.
+
+    team1 is treated as home. Transparent to the model — same contract as v1.
+    """
+    try:
+        from soccer_agent.predictor import predict_match_xgb
+
+        result = predict_match_xgb(team1, team2)
+        if "error" not in result:
+            return result
+    except Exception:  # noqa: BLE001 - never let serving break the tool
+        pass
+    return predict_match_elo(team1, team2)
 
 
 def vector_search(query: str) -> dict:
@@ -500,9 +516,9 @@ TOOL_DECLARATIONS = [
         "name": "predict_match",
         "description": (
             "Use this tool when the user asks who will win or wants outcome "
-            "probabilities between two teams. "
-            "Predicts match outcome using Elo ratings, returning win/draw/loss "
-            "probabilities. Treats team1 as home (adds ~100 Elo home advantage)."
+            "probabilities between two teams. Returns win/draw/loss probabilities "
+            "from a trained model (Elo-based fallback if unavailable). "
+            "Treats team1 as home."
         ),
         "parameters": {
             "type": "object",
