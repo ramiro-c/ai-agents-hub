@@ -3,6 +3,7 @@
 import re
 
 from soccer_agent import db, embeddings, memory
+from soccer_agent.team_names import translate
 
 MAX_ROWS = 50
 TIMEOUT_MS = 5000
@@ -62,7 +63,7 @@ def get_team_elo(teams: str) -> dict:
     """Return current Elo ratings for one or two teams (comma-separated)."""
     try:
         with db.connect() as conn:
-            team_list = [t.strip() for t in teams.split(",")]
+            team_list = [translate(t.strip()) for t in teams.split(",")]
             elos = {}
             not_found = []
             for team in team_list:
@@ -82,6 +83,7 @@ def get_team_elo(teams: str) -> dict:
 def get_team_form(team: str, n: int = 5) -> dict:
     """Return a team's last N match results (W/D/L)."""
     try:
+        team = translate(team)
         with db.connect() as conn:
             rows = conn.execute(
                 """SELECT match_date, home_team, away_team,
@@ -133,6 +135,8 @@ def get_team_form(team: str, n: int = 5) -> dict:
 def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
     """Return the head-to-head record between two teams."""
     try:
+        team1 = translate(team1)
+        team2 = translate(team2)
         with db.connect() as conn:
             rows = conn.execute(
                 """SELECT match_date, home_team, away_team,
@@ -196,6 +200,8 @@ def predict_match_elo(team1: str, team2: str) -> dict:
     Treats team1 as home (adds home advantage).
     """
     try:
+        team1 = translate(team1)
+        team2 = translate(team2)
         from soccer_agent.elo import HOME_ADVANTAGE, expected_score
 
         with db.connect() as conn:
@@ -254,6 +260,8 @@ def predict_match(team1: str, team2: str) -> dict:
     team1 is treated as home. Transparent to the model — same contract as v1.
     """
     try:
+        team1 = translate(team1)
+        team2 = translate(team2)
         from soccer_agent.predictor import predict_match_xgb
 
         result = predict_match_xgb(team1, team2)
@@ -368,6 +376,8 @@ TOOL_DECLARATIONS = [
             "Use this tool ONLY when no specialized tool (get_h2h, get_team_form, "
             "predict_match, get_team_elo) covers the question. "
             "Run a read-only SQL SELECT against the PostgreSQL soccer database. "
+            "Team names are stored in English — translate non-English names "
+            "before writing SQL. "
             "For year filters use EXTRACT(YEAR FROM match_date); for "
             "case-insensitive text use ILIKE (e.g. tournament ILIKE '%world cup%'). "
             "Tables: "

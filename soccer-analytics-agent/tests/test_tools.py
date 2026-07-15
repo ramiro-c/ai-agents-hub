@@ -230,3 +230,21 @@ def test_predict_match_elo_still_available():
     result = predict_match_elo("Argentina", "Brazil")
     assert "probabilities" in result
     assert abs(sum(result["probabilities"].values()) - 1.0) < 0.01
+
+
+# --- Team name translation integration ---
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_h2h_spanish_input():
+    """Spanish team name in get_h2h is translated and returns real match data."""
+    from soccer_agent.tools import get_h2h
+
+    result = get_h2h("Argentina", "Inglaterra")
+    assert "error" not in result, result
+    assert result["total"] > 0, (
+        f"Expected real data for Argentina vs England, got total={result['total']}"
+    )
+    # Verify the record keys use the English names (translated)
+    assert "England" in result["record"]

@@ -15,6 +15,7 @@ import numpy as np
 
 from soccer_agent import db
 from soccer_agent.features import RECENT_WINDOW, TeamHistory, compute_features
+from soccer_agent.team_names import translate
 
 MODEL_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "xgboost_match_predictor.joblib"
@@ -93,6 +94,8 @@ def predict_match_xgb(
 ) -> dict:
     """Predict a single matchup with the trained model. Never raises."""
     try:
+        home_team = translate(home_team)
+        away_team = translate(away_team)
         bundle = _load()
         if bundle is None:
             return {
