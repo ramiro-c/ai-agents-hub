@@ -248,3 +248,45 @@ def test_get_h2h_spanish_input():
     )
     # Verify the record keys use the English names (translated)
     assert "England" in result["record"]
+    # REQ-TRANSPARENCY-001: original queried names are surfaced
+    assert result.get("team2_queried") == "Inglaterra"
+    assert "team1_queried" not in result  # Argentina unchanged
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_elo_spanish_input_transparency():
+    """Spanish input in get_team_elo surfaces queried_names for translated entries."""
+    from soccer_agent.tools import get_team_elo
+
+    result = get_team_elo("Argentina,Inglaterra")
+    assert "error" not in result, result
+    assert "Argentina" in result["elos"]
+    assert "England" in result["elos"]
+    assert result["queried_names"] == {"Inglaterra": "England"}
+
+
+@pytest.mark.integration
+@requires_db
+def test_get_team_form_spanish_input_transparency():
+    """Spanish input in get_team_form surfaces queried_name when translated."""
+    from soccer_agent.tools import get_team_form
+
+    result = get_team_form("Inglaterra", 3)
+    assert "error" not in result, result
+    assert result["team"] == "England"
+    assert result["queried_name"] == "Inglaterra"
+
+
+@pytest.mark.integration
+@requires_db
+def test_predict_match_spanish_input_transparency():
+    """Spanish input in predict_match surfaces queried fields for translated teams."""
+    from soccer_agent.tools import predict_match
+
+    result = predict_match("Inglaterra", "Francia")
+    assert "error" not in result, result
+    assert result["team1"] == "England"
+    assert result["team2"] == "France"
+    assert result.get("team1_queried") == "Inglaterra"
+    assert result.get("team2_queried") == "Francia"

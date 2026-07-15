@@ -41,7 +41,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("connecting");
-
+  const geminiModel = 'gemini-2.5-flash';
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
 
@@ -89,7 +89,9 @@ export default function App() {
           setSessionId(chatResp.session_id);
           try {
             localStorage.setItem(SESSION_KEY, chatResp.session_id);
-          } catch { /* storage unavailable */ }
+          } catch {
+            /* storage unavailable */
+          }
         }
 
         // 2. Use the server-authoritative turn id (never guess it client-side —
@@ -135,7 +137,9 @@ export default function App() {
           setSessionId(newId);
           try {
             localStorage.setItem(SESSION_KEY, newId);
-          } catch { /* storage unavailable */ }
+          } catch {
+            /* storage unavailable */
+          }
 
           setMessages((prev) => [
             ...prev,
@@ -179,7 +183,7 @@ export default function App() {
               Soccer Analytics Agent
             </h1>
             <p className="font-mono text-[10.5px] tracking-wide text-fg-faint">
-              Gemini · Postgres + pgvector · 49K matches
+              Gemini ({geminiModel}) · Postgres + pgvector · 49K matches
             </p>
           </div>
         </div>
@@ -193,7 +197,9 @@ export default function App() {
               setMessages([]);
               try {
                 localStorage.setItem(SESSION_KEY, newId);
-              } catch { /* storage unavailable */ }
+              } catch {
+                /* storage unavailable */
+              }
             }}
             disabled={busy}
             className="rounded-lg border border-line-soft bg-surface px-3 py-1.5 text-[12px] text-fg-dim transition-colors hover:border-accent hover:text-fg disabled:opacity-40"

@@ -62,8 +62,9 @@ def recall(query: str) -> dict:
 def get_team_elo(teams: str) -> dict:
     """Return current Elo ratings for one or two teams (comma-separated)."""
     try:
+        raw_names = [t.strip() for t in teams.split(",")]
+        team_list = [translate(t) for t in raw_names]
         with db.connect() as conn:
-            team_list = [translate(t.strip()) for t in teams.split(",")]
             elos = {}
             not_found = []
             for team in team_list:
@@ -75,7 +76,11 @@ def get_team_elo(teams: str) -> dict:
                     elos[team] = {"elo": round(float(row[0]), 1), "matches": row[1]}
                 else:
                     not_found.append(team)
-        return {"elos": elos, "not_found": not_found or None}
+        result: dict = {"elos": elos, "not_found": not_found or None}
+        renamed = {r: t for r, t in zip(raw_names, team_list) if r != t}
+        if renamed:
+            result["queried_names"] = renamed
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -83,6 +88,7 @@ def get_team_elo(teams: str) -> dict:
 def get_team_form(team: str, n: int = 5) -> dict:
     """Return a team's last N match results (W/D/L)."""
     try:
+        team_raw = team.strip()
         team = translate(team)
         with db.connect() as conn:
             rows = conn.execute(
@@ -127,7 +133,10 @@ def get_team_form(team: str, n: int = 5) -> dict:
                         "tournament": tournament or "Friendly",
                     }
                 )
-        return {"team": team, "form": form, "last_n": n}
+        result: dict = {"team": team, "form": form, "last_n": n}
+        if team_raw != team:
+            result["queried_name"] = team_raw
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -135,6 +144,8 @@ def get_team_form(team: str, n: int = 5) -> dict:
 def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
     """Return the head-to-head record between two teams."""
     try:
+        team1_raw = team1.strip()
+        team2_raw = team2.strip()
         team1 = translate(team1)
         team2 = translate(team2)
         with db.connect() as conn:
@@ -183,13 +194,18 @@ def get_h2h(team1: str, team2: str, n: int = 10) -> dict:
                         "tournament": tournament or "Friendly",
                     }
                 )
-        return {
+        result: dict = {
             "team1": team1,
             "team2": team2,
             "record": {team1: wins1, team2: wins2, "draws": draws},
             "total": len(matches),
             "last_matches": matches,
         }
+        if team1_raw != team1:
+            result["team1_queried"] = team1_raw
+        if team2_raw != team2:
+            result["team2_queried"] = team2_raw
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -200,6 +216,8 @@ def predict_match_elo(team1: str, team2: str) -> dict:
     Treats team1 as home (adds home advantage).
     """
     try:
+        team1_raw = team1.strip()
+        team2_raw = team2.strip()
         team1 = translate(team1)
         team2 = translate(team2)
         from soccer_agent.elo import HOME_ADVANTAGE, expected_score
@@ -233,7 +251,7 @@ def predict_match_elo(team1: str, team2: str) -> dict:
         p2_win /= total
         p_draw /= total
 
-        return {
+        result: dict = {
             "team1": team1,
             "team2": team2,
             "ratings": {team1: round(elo1, 1), team2: round(elo2, 1)},
@@ -250,6 +268,11 @@ def predict_match_elo(team1: str, team2: str) -> dict:
                 f"draw {p_draw * 100:.1f}%"
             ),
         }
+        if team1_raw != team1:
+            result["team1_queried"] = team1_raw
+        if team2_raw != team2:
+            result["team2_queried"] = team2_raw
+        return result
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -260,6 +283,8 @@ def predict_match(team1: str, team2: str) -> dict:
     team1 is treated as home. Transparent to the model — same contract as v1.
     """
     try:
+        team1_raw = team1.strip()
+        team2_raw = team2.strip()
         team1 = translate(team1)
         team2 = translate(team2)
         from soccer_agent.predictor import predict_match_xgb
@@ -269,10 +294,15 @@ def predict_match(team1: str, team2: str) -> dict:
             # Normalize to the shared contract: the frontend ProbabilityBar and
             # the analytics panel read top-level team1/team2 (the Elo fallback
             # already includes them); the XGBoost result does not.
-            return {**result, "team1": team1, "team2": team2}
+            result = {**result, "team1": team1, "team2": team2}
+            if team1_raw != team1:
+                result["team1_queried"] = team1_raw
+            if team2_raw != team2:
+                result["team2_queried"] = team2_raw
+            return result
     except Exception:  # noqa: BLE001 - never let serving break the tool
         pass
-    return predict_match_elo(team1, team2)
+    return predict_match_elo(team1_raw, team2_raw)
 
 
 def vector_search(query: str) -> dict:
