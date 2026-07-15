@@ -1,5 +1,12 @@
 # Soccer Analytics Agent — Phase 7: XGBoost Match Predictor
 
+> **⚠️ SUPERSEDED (2026-07-14).** This draft predates inspecting the Oracle
+> workshop. Its binary target + hand-tuned draw constant, Optuna search, and
+> precompute-lookup serving are obsolete. Use
+> `docs/superpowers/plans/2026-07-14-soccer-agent-phase-7-xgboost.md` and
+> `docs/superpowers/specs/2026-07-14-soccer-agent-phase-7-xgboost-design.md`.
+> Kept for history only.
+
 > **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the Elo heuristic in `predict_match` (Phase 4, ~55% accuracy) with a gradient-boosted tree model trained on engineered features from 49k matches. The LLM stays stock — domain intelligence lives in the specialist model exposed as a tool.
