@@ -3,3 +3,7 @@ data/
 .secrets/
 __pycache__/
 .venv/
+.pytest_cache/
+.cachebro/
+.playwright-mcp/
+.atl/
