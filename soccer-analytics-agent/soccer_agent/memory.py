@@ -37,6 +37,13 @@ def load_working(session_id: str, limit: int = 10) -> list[tuple[str, str]]:
 
 # --- Episodic memory: similarity, session-scoped ---
 
+# Cosine-similarity floor for episodic recall. Contentless follow-ups
+# ("show me the last 5 ones") score ~0.1-0.25 against any specific episode,
+# while a genuine recall lands ~0.6+; 0.45 sits in that gap. Below it, we
+# recall nothing rather than inject the nearest topically-wrong episode as
+# grounding — which used to steer the model onto the wrong matchup.
+MIN_EPISODE_SCORE = 0.45
+
 
 def save_episode(session_id: str, user_message: str, agent_response: str) -> None:
     vec = render_vector(embed(f"{user_message}\n{agent_response}"))
@@ -49,7 +56,12 @@ def save_episode(session_id: str, user_message: str, agent_response: str) -> Non
         )
 
 
-def recall_episodes(session_id: str, query: str, k: int = 3) -> list[dict]:
+def recall_episodes(
+    session_id: str,
+    query: str,
+    k: int = 3,
+    min_score: float = MIN_EPISODE_SCORE,
+) -> list[dict]:
     vec = render_vector(embed(query))
     with db.connect() as conn:
         rows = conn.execute(
@@ -62,6 +74,7 @@ def recall_episodes(session_id: str, query: str, k: int = 3) -> list[dict]:
     return [
         {"user_message": r[0], "agent_response": r[1], "score": float(r[2])}
         for r in rows
+        if float(r[2]) >= min_score
     ]
 
 
