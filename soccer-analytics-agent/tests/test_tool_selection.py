@@ -47,6 +47,21 @@ def test_system_prompt_preserves_language_instruction():
     assert "Answer in the user's language" in SYSTEM_PROMPT
 
 
+def test_predict_match_prompt_describes_trained_model_not_elo():
+    """The predict_match guidance must describe the trained XGBoost model, not
+    claim it predicts 'using Elo ratings'.
+
+    Regression: the stale Phase-6 phrasing made the agent explain its own
+    XGBoost prediction as "based on Elo ratings" when asked 'why?', because the
+    LLM parrots the tool description it is given.
+    """
+    assert (
+        "predict_match: match outcome probabilities using Elo ratings"
+        not in SYSTEM_PROMPT
+    )
+    assert "XGBoost" in SYSTEM_PROMPT
+
+
 # ── REQUIREMENT-3: specialized tool descriptions have trigger cues ──────
 
 
