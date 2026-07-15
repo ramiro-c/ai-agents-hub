@@ -215,6 +215,11 @@ def test_predict_match_contract_has_probability_keys():
     assert "France_win" in probs
     assert "draw" in probs
     assert abs(sum(probs.values()) - 1.0) < 0.01
+    # Top-level team1/team2 are part of the contract the frontend ProbabilityBar
+    # and analytics panel depend on to build the {team}_win keys. The XGBoost
+    # path must include them, not just the Elo fallback (regression guard).
+    assert result["team1"] == "Argentina"
+    assert result["team2"] == "France"
 
 
 @pytest.mark.integration

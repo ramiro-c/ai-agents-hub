@@ -258,7 +258,10 @@ def predict_match(team1: str, team2: str) -> dict:
 
         result = predict_match_xgb(team1, team2)
         if "error" not in result:
-            return result
+            # Normalize to the shared contract: the frontend ProbabilityBar and
+            # the analytics panel read top-level team1/team2 (the Elo fallback
+            # already includes them); the XGBoost result does not.
+            return {**result, "team1": team1, "team2": team2}
     except Exception:  # noqa: BLE001 - never let serving break the tool
         pass
     return predict_match_elo(team1, team2)
