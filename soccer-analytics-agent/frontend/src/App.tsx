@@ -44,7 +44,6 @@ export default function App() {
 
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
-  const turnRef = useRef(0);
 
   // ── Health polling (T-025) ──
   useEffect(() => {
@@ -93,9 +92,9 @@ export default function App() {
           } catch { /* storage unavailable */ }
         }
 
-        // 2. Compute turn ID (ref-based, never stale)
-        turnRef.current += 1;
-        const turnId = turnRef.current;
+        // 2. Use the server-authoritative turn id (never guess it client-side —
+        //    a local counter desyncs from the backend after a reload).
+        const turnId = chatResp.turn_id;
 
         const assistantMsg: Message = {
           id: nextId(),
@@ -192,7 +191,6 @@ export default function App() {
               const newId = uid();
               setSessionId(newId);
               setMessages([]);
-              turnRef.current = 0;
               try {
                 localStorage.setItem(SESSION_KEY, newId);
               } catch { /* storage unavailable */ }

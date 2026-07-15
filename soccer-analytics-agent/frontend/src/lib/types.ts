@@ -4,6 +4,8 @@
 export interface ChatResponse {
   session_id: string;
   answer: string;
+  /** Server-authoritative turn id — use this to fetch this turn's trace. */
+  turn_id: number;
 }
 
 /** GET /api/sessions/{id}/trace response */

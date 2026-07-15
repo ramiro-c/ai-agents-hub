@@ -22,7 +22,7 @@ def main() -> None:
             break
         if not user or user.lower() in {"exit", "quit"}:
             break
-        answer = respond(client, session_id, user, model=model)
+        answer, _ = respond(client, session_id, user, model=model)
         print(f"agent> {answer}\n")
 
 

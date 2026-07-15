@@ -54,6 +54,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     answer: str
+    turn_id: int
 
 
 class MemoryItem(BaseModel):
@@ -107,10 +108,10 @@ async def chat(req: ChatRequest):
     """
     session_id = req.session_id or f"web-{uuid.uuid4().hex[:8]}"
     try:
-        answer = await asyncio.to_thread(
+        answer, turn_id = await asyncio.to_thread(
             respond, _client, session_id, req.message, model="gemini-2.5-flash"
         )
-        return ChatResponse(session_id=session_id, answer=answer)
+        return ChatResponse(session_id=session_id, answer=answer, turn_id=turn_id)
     except Exception as exc:
         raise HTTPException(500, f"Agent error: {exc}")
 

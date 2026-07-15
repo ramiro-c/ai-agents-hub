@@ -28,8 +28,12 @@ def _augment(user_message: str, episodes: list[dict]) -> str:
     )
 
 
-def respond(client, session_id: str, user_message: str, model: str) -> str:
-    """Run one memory-aware turn: seed + ground -> answer -> persist."""
+def respond(client, session_id: str, user_message: str, model: str) -> tuple[str, int]:
+    """Run one memory-aware turn: seed + ground -> answer -> persist.
+
+    Returns ``(answer, turn_id)`` so callers can associate the persisted trace
+    (which is keyed by ``turn_id``) with this exact turn instead of guessing it.
+    """
     prior = _to_history(memory.load_working(session_id))
     episodes = memory.recall_episodes(session_id, user_message, k=3)
     augmented = _augment(user_message, episodes)
@@ -42,4 +46,4 @@ def respond(client, session_id: str, user_message: str, model: str) -> str:
     memory.append_working(session_id, "user", user_message)  # store raw, not augmented
     memory.append_working(session_id, "model", answer)
     memory.save_episode(session_id, user_message, answer)
-    return answer
+    return answer, turn_id

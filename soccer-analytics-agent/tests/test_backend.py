@@ -19,9 +19,10 @@ def test_client(monkeypatch):
 
     monkeypatch.setattr("backend.main._client", FakeClient())
 
-    # Replace respond() with a fast deterministic stub (sync, not async)
+    # Replace respond() with a fast deterministic stub (sync, not async).
+    # respond() returns (answer, turn_id); the stub mirrors that shape.
     def _fake_respond(_client, session_id, message, model=None):
-        return f"Echo: {message}"
+        return f"Echo: {message}", 1
 
     monkeypatch.setattr("backend.main.respond", _fake_respond)
     return TestClient(app)
@@ -42,6 +43,7 @@ class TestChat:
         data = resp.json()
         assert data["session_id"].startswith("web-")
         assert data["answer"] == "Echo: Hello"
+        assert data["turn_id"] == 1  # server-authoritative turn id returned inline
 
     def test_chat_reuses_session(self, test_client):
         sid = "test-session-1"

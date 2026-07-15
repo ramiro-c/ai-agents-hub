@@ -53,9 +53,12 @@ def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     )
 
     fake = SimpleNamespace(models=FakeModels("He plays for Inter Miami."))
-    answer = chat.respond(fake, "sess-1", "Where does he play now?", model="test")
+    answer, turn_id = chat.respond(
+        fake, "sess-1", "Where does he play now?", model="test"
+    )
 
     assert answer == "He plays for Inter Miami."
+    assert turn_id == 1  # get_last_turn_id stubbed to 0, so this turn is 1
     # working memory was seeded (2 prior turns) + current user turn = 3 contents sent
     assert len(fake.models.last_contents) == 3
     # episodic grounding was injected into the current user message
