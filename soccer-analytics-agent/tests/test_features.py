@@ -136,6 +136,38 @@ def test_goalscorer_features_use_minute_and_penalty():
     assert feats["home_late_goal_ratio"] == 0.5
 
 
+def test_streak_is_bounded_by_recent_window():
+    from soccer_agent.features import RECENT_WINDOW
+
+    h = TeamHistory()
+    # a win streak longer than the window
+    for _ in range(RECENT_WINDOW + 10):
+        h.add_match(
+            is_win=True,
+            is_draw=False,
+            gs=1,
+            gc=0,
+            match_date=date(2019, 1, 1),
+            n_scorers=1,
+            n_penalty_goals=0,
+            n_late_goals=0,
+            n_goals=1,
+        )
+    feats = compute_features(
+        h,
+        TeamHistory(),
+        elo_home=1500,
+        elo_away=1500,
+        neutral=False,
+        tournament="Friendly",
+        h2h={"matches": 0, "home_win_rate": 0.0, "goal_diff": 0.0},
+        match_date=date(2019, 2, 1),
+    )
+    # streak/unbeaten must cap at the window, not the full history length
+    assert feats["home_streak"] == RECENT_WINDOW
+    assert feats["home_unbeaten"] == RECENT_WINDOW
+
+
 def test_poisson_win_draw_sums_below_one_and_favors_stronger():
     p_win, p_draw = poisson_win_draw(2.0, 0.5)
     assert 0 <= p_draw <= 1

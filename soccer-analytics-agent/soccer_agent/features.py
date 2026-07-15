@@ -23,6 +23,11 @@ CONTINENTAL = {
     "Oceania Nations Cup",
 }
 
+# Rolling-state window: serving rebuilds exactly this many recent matches,
+# so every windowed feature (including streaks) must cap at this to keep
+# training and serving computing the same value. See predictor._RECENT.
+RECENT_WINDOW = 20
+
 FEATURE_FAMILIES: dict[str, list[str]] = {
     "ELO": ["elo_home", "elo_away", "elo_diff", "elo_sum", "home_expected"],
     "FORM": [
@@ -124,7 +129,7 @@ def _last(xs: list, n: int) -> list:
 
 def _streak(results: list[float], predicate) -> int:
     count = 0
-    for r in reversed(results):
+    for r in reversed(_last(results, RECENT_WINDOW)):
         if predicate(r):
             count += 1
         else:

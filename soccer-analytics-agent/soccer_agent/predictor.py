@@ -14,12 +14,12 @@ import joblib
 import numpy as np
 
 from soccer_agent import db
-from soccer_agent.features import TeamHistory, compute_features
+from soccer_agent.features import RECENT_WINDOW, TeamHistory, compute_features
 
 MODEL_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "xgboost_match_predictor.joblib"
 )
-_RECENT = 20  # matches of history to rebuild rolling state
+_RECENT = RECENT_WINDOW  # keep serving's rebuild depth == the feature window
 
 _MODEL: dict | None = None
 
