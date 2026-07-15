@@ -47,7 +47,7 @@ delegates narrow jobs to cheap specialist models exposed as tools.
 |---|---|---|---|
 | Gemini (LLM) | billions of params | reason, converse, decide which tool to call | Vertex AI (paid API) |
 | MiniLM (`all-MiniLM-L6-v2`) | ~22M params | text → 384-dim meaning vector (embeddings) | local, free |
-| XGBoost (Phase 7, planned) | gradient-boosted trees | predict match outcome from engineered features | local, free |
+| XGBoost (Phase 7) | gradient-boosted trees | predict match outcome from engineered features | local, free |
 
 SQL search matches what words *say* (exact text). Embeddings match what words
 *mean* (semantic similarity). The agent uses both.
@@ -171,8 +171,8 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
 | 4 | Elo tracker + `predict_match` v1 (Elo-based heuristic, 336 teams) | ✅ Done |
 | 5 | Observability: persist every step of every turn (trace table) | ✅ Done |
 | 6 | FastAPI + React frontend | ✅ Done |
-| 7 | Full ML pipeline: feature trackers + XGBoost + Optuna; swap predictor | ⏳ Next |
-| 8 | Deploy to GCP: Cloud SQL, Artifact Registry, Cloud Run, Secret Manager | ⬜ Planned |
+| 7 | Multiclass XGBoost predictor (51 features, live inference, Elo fallback); ablation study | ✅ Done |
+| 8 | Deploy to GCP: Cloud SQL, Artifact Registry, Cloud Run, Secret Manager | ⏳ Next |
 
 ## Known deferred items & gotchas
 
