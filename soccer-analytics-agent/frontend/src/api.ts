@@ -9,17 +9,29 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    const detail =
-      typeof body?.detail === "string"
-        ? body.detail
-        : body?.message ?? `Error ${res.status}`;
-    throw new ApiError(detail, res.status);
+async function fetchJson<T>(
+  url: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
+  const { timeoutMs = 30_000, ...fetchInit } = init ?? {};
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...fetchInit, signal: ctrl.signal });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const detail =
+        typeof body?.detail === "string"
+          ? body.detail
+          : body?.message ?? `Error ${res.status}`;
+      throw new ApiError(detail, res.status);
+    }
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 /** Send a chat message. Returns {session_id, answer}. */
@@ -34,12 +46,13 @@ export async function sendChat(
   });
 }
 
-/** Fetch the full trace for a session. */
+/** Fetch the full trace for a session. Short timeout — trace data lands before the chat response returns. */
 export async function getTrace(
   sessionId: string,
 ): Promise<TraceResponse> {
   return fetchJson<TraceResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/trace`,
+    { timeoutMs: 5_000 },
   );
 }
 
