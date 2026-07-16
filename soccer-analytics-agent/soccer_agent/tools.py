@@ -416,7 +416,8 @@ TOOL_DECLARATIONS = [
             "tournament, city, country, neutral), "
             "goalscorers(match_date, home_team, away_team, team, scorer, minute, "
             "own_goal, penalty), "
-            "shootouts(match_date, home_team, away_team, winner, first_shooter). "
+            "shootouts(match_date, home_team, away_team, winner, first_shooter), "
+            "team_elo(team, elo, matches_played, updated_at). "
             "Results are capped at 50 rows, so aggregate or LIMIT accordingly."
         ),
         "parameters": {
