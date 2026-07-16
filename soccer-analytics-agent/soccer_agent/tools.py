@@ -300,7 +300,8 @@ def predict_match(team1: str, team2: str) -> dict:
             if team2_raw != team2:
                 result["team2_queried"] = team2_raw
             return result
-    except Exception:  # noqa: BLE001 - never let serving break the tool
+    except Exception as e:  # noqa: BLE001 - never let serving break the tool
+        print(f"Error predicting match: {e}")
         pass
     return predict_match_elo(team1_raw, team2_raw)
 

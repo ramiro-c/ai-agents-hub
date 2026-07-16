@@ -20,7 +20,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "python-vibe-guard>=0.12.1",
+]
 
 [tool.pytest.ini_options]
 markers = ["integration: requires the local Postgres container"]

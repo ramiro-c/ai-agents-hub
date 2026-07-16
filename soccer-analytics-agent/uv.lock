@@ -1231,6 +1231,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-vibe-guard"
+version = "0.12.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/0b/c291be9e9ffe73b2b613b5bb1e481ef8ea13da0909686f3cc29a1fa4a265/python_vibe_guard-0.12.1.tar.gz", hash = "sha256:17ce5d1e1962191a3f68886ca2990021b70d13b309f4b9629dfa5a3f91bfef71", size = 63889, upload-time = "2026-07-13T19:50:52.556Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/23/59eab3304cddcdded4f590d7e3b64432e1e03bf064be84d31cec9c4d07f0/python_vibe_guard-0.12.1-py3-none-any.whl", hash = "sha256:5f0fb5fa0d6f3ea1bbd7bf3f7e52e38fef79f580e47a4926f626d4e992e55f83", size = 58819, upload-time = "2026-07-13T19:50:51.23Z" },
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1584,6 +1593,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "python-vibe-guard" },
 ]
 
 [package.metadata]
@@ -1604,7 +1614,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0" }]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "python-vibe-guard", specifier = ">=0.12.1" },
+]
 
 [[package]]
 name = "starlette"
