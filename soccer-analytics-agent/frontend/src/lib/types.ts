@@ -140,9 +140,9 @@ export type HealthStatus = "healthy" | "unhealthy" | "connecting";
 // ── Analytics aggregation ──
 
 export interface AnalyticsSnapshot {
-  prediction?: PredictResult;
+  predictions: PredictResult[];
   elos: EloResult[];
   forms: FormResult[];
-  h2h?: H2HResult;
+  h2h: H2HResult[];
   subjectTeams: string[];
 }

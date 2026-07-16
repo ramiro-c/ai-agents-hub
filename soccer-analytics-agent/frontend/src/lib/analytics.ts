@@ -10,14 +10,14 @@ import type {
 /** Distill all messages into the aggregated analytics state for the panel. */
 export function buildSnapshot(messages: Message[]): AnalyticsSnapshot {
   const snapshot: AnalyticsSnapshot = {
+    predictions: [],
     elos: [],
     forms: [],
+    h2h: [],
     subjectTeams: [],
   };
 
-  // Latest per single-value types, accumulated per array types
-  let prediction: PredictResult | undefined;
-  let h2hLatest: H2HResult | undefined;
+  // All result types accumulate in message order (oldest first).
   const teamSet = new Set<string>();
 
   for (const msg of messages) {
@@ -30,7 +30,7 @@ export function buildSnapshot(messages: Message[]): AnalyticsSnapshot {
         case "predict_match": {
           const p = r as unknown as PredictResult;
           if (p.team1 && p.team2 && p.probabilities) {
-            prediction = p; // latest wins
+            snapshot.predictions.push(p);
             teamSet.add(p.team1);
             teamSet.add(p.team2);
           }
@@ -58,7 +58,7 @@ export function buildSnapshot(messages: Message[]): AnalyticsSnapshot {
         case "get_h2h": {
           const h2h = r as unknown as H2HResult;
           if (h2h.team1 && h2h.team2) {
-            h2hLatest = h2h;
+            snapshot.h2h.push(h2h);
             teamSet.add(h2h.team1);
             teamSet.add(h2h.team2);
           }
@@ -68,8 +68,6 @@ export function buildSnapshot(messages: Message[]): AnalyticsSnapshot {
     }
   }
 
-  if (prediction) snapshot.prediction = prediction;
-  if (h2hLatest) snapshot.h2h = h2hLatest;
   snapshot.subjectTeams = [...teamSet];
 
   return snapshot;

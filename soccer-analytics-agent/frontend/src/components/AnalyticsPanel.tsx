@@ -10,10 +10,10 @@ interface Props {
 
 export function AnalyticsPanel({ snapshot }: Props) {
   const hasData =
-    snapshot.prediction ||
+    snapshot.predictions.length > 0 ||
     snapshot.elos.length > 0 ||
     snapshot.forms.length > 0 ||
-    snapshot.h2h;
+    snapshot.h2h.length > 0;
 
   if (!hasData) {
     return (
@@ -51,12 +51,15 @@ export function AnalyticsPanel({ snapshot }: Props) {
         </div>
       )}
 
-      {/* Prediction */}
-      {snapshot.prediction && (
-        <section className="rounded-xl border border-line-soft bg-surface p-3">
-          <ProbabilityBar data={snapshot.prediction} variant="hero" />
+      {/* Predictions */}
+      {snapshot.predictions.map((prediction, i) => (
+        <section
+          key={i}
+          className="rounded-xl border border-line-soft bg-surface p-3"
+        >
+          <ProbabilityBar data={prediction} variant="hero" />
         </section>
-      )}
+      ))}
 
       {/* Elo */}
       {snapshot.elos.length > 0 && (
@@ -83,12 +86,14 @@ export function AnalyticsPanel({ snapshot }: Props) {
       )}
 
       {/* H2H */}
-      {snapshot.h2h && (
+      {snapshot.h2h.length > 0 && (
         <section>
           <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
             Head-to-Head
           </p>
-          <H2HRecord data={snapshot.h2h} />
+          {snapshot.h2h.map((h2h, i) => (
+            <H2HRecord key={i} data={h2h} />
+          ))}
         </section>
       )}
     </div>
