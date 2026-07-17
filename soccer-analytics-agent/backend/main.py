@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from google.genai import errors
 from pydantic import BaseModel
 from soccer_agent import db, memory, trace
 from soccer_agent.chat import respond
@@ -112,6 +113,16 @@ async def chat(req: ChatRequest):
             respond, _client, session_id, req.message, model="gemini-2.5-flash"
         )
         return ChatResponse(session_id=session_id, answer=answer, turn_id=turn_id)
+    except errors.ClientError as exc:
+        if exc.code == 429:
+            raise HTTPException(
+                429,
+                "The AI service is busy right now (rate limit). "
+                "Please wait a few seconds and try again.",
+            )
+        raise HTTPException(
+            502, "The AI service rejected the request. Please try again."
+        )
     except Exception as exc:
         raise HTTPException(500, f"Agent error: {exc}")
 

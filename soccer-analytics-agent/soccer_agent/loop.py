@@ -1,11 +1,17 @@
 """Hand-written agent loop: model -> tool calls -> tool results -> model."""
 
-from google.genai import types
+import time
+
+from google.genai import errors, types
 
 from soccer_agent import trace
 from soccer_agent.tools import TOOL_DECLARATIONS, dispatch
 
-MAX_TOOL_ROUNDS = 8
+MAX_TOOL_ROUNDS = 5
+# Gemini's 429 (RESOURCE_EXHAUSTED) is a per-minute quota; a short backoff
+# usually clears it, so transient spikes never reach the user.
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_BASE_S = 2.0
 
 SYSTEM_PROMPT = (
     "You are a soccer analytics assistant with access to a PostgreSQL database of "
@@ -49,6 +55,25 @@ def _config() -> types.GenerateContentConfig:
     )
 
 
+def _generate(client, *, model, history, config):
+    """Call the model, retrying with exponential backoff on 429 rate limits.
+
+    A 429 usually means the per-minute quota was hit; waiting a couple of
+    seconds and retrying clears it transparently. Any other error, or an
+    exhausted retry budget, propagates to the caller (blocking sleep is fine —
+    this runs in a worker thread, not the event loop).
+    """
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            return client.models.generate_content(
+                model=model, contents=history, config=config
+            )
+        except errors.ClientError as exc:
+            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                raise
+            time.sleep(RATE_LIMIT_BACKOFF_BASE_S * 2**attempt)
+
+
 def run_turn(
     client, history: list, user_message: str, model: str, trace_ctx: dict | None = None
 ) -> tuple[str, list, int]:
@@ -65,9 +90,7 @@ def run_turn(
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
-        response = client.models.generate_content(
-            model=model, contents=history, config=_config()
-        )
+        response = _generate(client, model=model, history=history, config=_config())
         content = response.candidates[0].content
         history.append(content)
 

@@ -150,6 +150,18 @@ export default function App() {
               isError: true,
             },
           ]);
+        } else if (err instanceof ApiError && err.status === 429) {
+          // Rate limit — show a fixed, friendly message instead of the raw
+          // provider error, regardless of the backend detail string.
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "assistant",
+              text: "The service is receiving too many requests right now. Please wait a few seconds and try again.",
+              isError: true,
+            },
+          ]);
         } else {
           // General error — show inline error bubble
           setMessages((prev) => [
