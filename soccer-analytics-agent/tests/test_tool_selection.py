@@ -117,8 +117,13 @@ def test_sql_query_description_is_demoted():
 
 
 def test_max_tool_rounds_unchanged():
-    """REQ-2 scenario 2.3: MAX_TOOL_ROUNDS must still be 8."""
-    assert MAX_TOOL_ROUNDS == 8
+    """MAX_TOOL_ROUNDS is capped at 5.
+
+    Originally 8; lowered to 5 in ffae02d ("handle Gemini 429 rate limits
+    gracefully") to reduce per-turn API calls and 429 pressure. This guards
+    against silent regressions of that intentional cap.
+    """
+    assert MAX_TOOL_ROUNDS == 5
 
 
 def test_dispatch_body_unchanged():
