@@ -15,6 +15,12 @@ class FakeModels:
         self.calls.append(contents)
         return self._responses.pop(0)
 
+    def generate_content_stream(self, *, model, contents, config):
+        # The real client streams; each scripted response is emitted as a
+        # single chunk (its candidate/content/parts shape matches a chunk).
+        self.calls.append(contents)
+        yield self._responses.pop(0)
+
 
 def _response(parts):
     content = types.Content(role="model", parts=parts)

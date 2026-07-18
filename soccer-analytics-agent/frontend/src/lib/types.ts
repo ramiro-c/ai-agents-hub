@@ -133,6 +133,14 @@ export interface RecallResult {
   facts: RecallResultItem[];
 }
 
+// ── SSE stream contract (POST /api/chat/stream) ──
+
+export type StreamEvent =
+  | { type: "tool_call"; calls: ToolCall[] }
+  | { type: "delta"; text: string }
+  | { type: "done"; session_id: string; turn_id: number; answer: string }
+  | { type: "error"; status: number; detail: string };
+
 // ── Health ──
 
 export type HealthStatus = "healthy" | "unhealthy" | "connecting";

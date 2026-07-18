@@ -3,7 +3,7 @@
 from google.genai import types
 
 from soccer_agent import memory, trace
-from soccer_agent.loop import run_turn
+from soccer_agent.loop import run_turn, run_turn_events
 
 
 def _to_history(turns: list[tuple[str, str]]) -> list:
@@ -47,3 +47,39 @@ def respond(client, session_id: str, user_message: str, model: str) -> tuple[str
     memory.append_working(session_id, "model", answer)
     memory.save_episode(session_id, user_message, answer)
     return answer, turn_id
+
+
+def respond_stream(client, session_id: str, user_message: str, model: str):
+    """Streaming twin of ``respond``: same seed/ground/turn_id, live events.
+
+    Forwards ``tool_call`` and ``delta`` events as they arrive, then persists
+    working memory + episode only once the turn reaches ``done`` (so a stream
+    that errors mid-flight never stores a partial answer). The ``done`` event is
+    enriched with ``session_id`` and ``turn_id`` for the client to reconcile.
+    """
+    prior = _to_history(memory.load_working(session_id))
+    episodes = memory.recall_episodes(session_id, user_message, k=3)
+    augmented = _augment(user_message, episodes)
+
+    turn_id = trace.get_last_turn_id(session_id) + 1
+    trace_ctx = {"session_id": session_id, "turn_id": turn_id}
+
+    gen = run_turn_events(client, prior, augmented, model=model, trace_ctx=trace_ctx)
+    try:
+        while True:
+            event = next(gen)
+            if event["type"] == "done":
+                answer = event["answer"]
+                memory.append_working(session_id, "user", user_message)  # raw
+                memory.append_working(session_id, "model", answer)
+                memory.save_episode(session_id, user_message, answer)
+                yield {
+                    "type": "done",
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "answer": answer,
+                }
+            else:
+                yield event
+    except StopIteration:
+        pass

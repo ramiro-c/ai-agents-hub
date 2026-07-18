@@ -20,6 +20,13 @@ class FakeModels:
         )  # copy — run_turn mutates the original after
         return _answer(self._text)
 
+    def generate_content_stream(self, *, model, contents, config):
+        # The real client streams; respond() drives run_turn through this path.
+        self.last_contents = list(
+            contents
+        )  # copy — run_turn_events mutates the original after
+        yield _answer(self._text)
+
 
 def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     saved = {"working": [], "episodes": [], "trace": []}

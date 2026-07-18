@@ -5,15 +5,17 @@ Blocking calls (respond, DB) run via asyncio.to_thread to avoid event-loop stall
 """
 
 import asyncio
+import json
 import uuid
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from google.genai import errors
 from pydantic import BaseModel
 from soccer_agent import db, memory, trace
-from soccer_agent.chat import respond
+from soccer_agent.chat import respond, respond_stream
 from soccer_agent.tools import get_team_elo, get_team_form
 
 # ---------------------------------------------------------------------------
@@ -125,6 +127,73 @@ async def chat(req: ChatRequest):
         )
     except Exception as exc:
         raise HTTPException(500, f"Agent error: {exc}")
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """Run one turn of the agent loop, streaming progress as Server-Sent Events.
+
+    Emits one ``tool_call`` event per tool round, ``delta`` events for the final
+    answer's tokens, a terminal ``done`` event, and an ``error`` event on
+    failure. The agent stack is fully synchronous, so it runs in a worker thread
+    and bridges events back to the event loop through an ``asyncio.Queue``.
+    """
+    session_id = req.session_id or f"web-{uuid.uuid4().hex[:8]}"
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    sentinel = object()
+
+    def worker():
+        try:
+            for event in respond_stream(
+                _client, session_id, req.message, model="gemini-2.5-flash"
+            ):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+        except errors.ClientError as exc:
+            if exc.code == 429:
+                err = {
+                    "type": "error",
+                    "status": 429,
+                    "detail": "The AI service is busy right now (rate limit). "
+                    "Please wait a few seconds and try again.",
+                }
+            else:
+                err = {
+                    "type": "error",
+                    "status": 502,
+                    "detail": "The AI service rejected the request. Please try again.",
+                }
+            loop.call_soon_threadsafe(queue.put_nowait, err)
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "error", "status": 500, "detail": f"Agent error: {exc}"},
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, sentinel)
+
+    async def event_stream():
+        future = loop.run_in_executor(None, worker)
+        try:
+            while True:
+                event = await queue.get()
+                if event is sentinel:
+                    break
+                event_type = event.get("type")
+                data = json.dumps({k: v for k, v in event.items() if k != "type"})
+                yield f"event: {event_type}\ndata: {data}\n\n"
+        finally:
+            await future
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/api/sessions/{session_id}/memory", response_model=MemoryResponse)

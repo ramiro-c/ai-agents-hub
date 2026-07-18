@@ -10,6 +10,14 @@ interface Props {
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
 
+  // Assistant bubble before its first event arrives: no text, no tool trace,
+  // not an error. Show a "Thinking…" indicator instead of a bare placeholder.
+  const isThinking =
+    !isUser &&
+    !message.isError &&
+    !message.text &&
+    (!message.trace || message.trace.length === 0);
+
   return (
     <div
       className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}
@@ -33,16 +41,25 @@ export function MessageBubble({ message }: Props) {
           <p className="whitespace-pre-wrap">{message.text}</p>
         ) : (
           <>
-            {/* Markdown answer */}
-            <div className="prose prose-invert prose-sm max-w-none [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-line-soft [&_th]:px-2 [&_th]:py-1 [&_th]:text-[12px] [&_td]:border [&_td]:border-line-soft [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_code]:text-[12px] [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre]:text-[12px]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.text || (message.isError ? "" : "…")}
-              </ReactMarkdown>
-            </div>
+            {isThinking ? (
+              <span className="flex items-center gap-1.5 text-[14px] text-fg-dim">
+                <span className="animate-pulse">Thinking</span>
+                <span className="animate-pulse">…</span>
+              </span>
+            ) : (
+              <>
+                {/* Markdown answer */}
+                <div className="prose prose-invert prose-sm max-w-none [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:border-line-soft [&_th]:px-2 [&_th]:py-1 [&_th]:text-[12px] [&_td]:border [&_td]:border-line-soft [&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_code]:text-[12px] [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre]:text-[12px]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.text || (message.isError ? "" : "…")}
+                  </ReactMarkdown>
+                </div>
 
-            {/* Tool trace cards */}
-            {message.trace && message.trace.length > 0 && (
-              <ToolTrace trace={message.trace} />
+                {/* Tool trace cards */}
+                {message.trace && message.trace.length > 0 && (
+                  <ToolTrace trace={message.trace} />
+                )}
+              </>
             )}
           </>
         )}

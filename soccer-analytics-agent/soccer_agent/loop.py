@@ -74,15 +74,54 @@ def _generate(client, *, model, history, config):
             time.sleep(RATE_LIMIT_BACKOFF_BASE_S * 2**attempt)
 
 
-def run_turn(
+def _generate_stream(client, *, model, history, config):
+    """Stream a model response, retrying on 429 only before the first chunk.
+
+    Mirrors ``_generate``'s backoff, but a stream can only be safely retried
+    while nothing has been yielded yet — once chunks flow, re-issuing the call
+    would duplicate them, so a mid-stream 429 propagates to the caller (surfaced
+    as an ``error`` event). The common case (429 on the very first call) is
+    still retried transparently.
+    """
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        started = False
+        try:
+            stream = client.models.generate_content_stream(
+                model=model, contents=history, config=config
+            )
+            for chunk in stream:
+                started = True
+                yield chunk
+            return
+        except errors.ClientError as exc:
+            if started or exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                raise
+            time.sleep(RATE_LIMIT_BACKOFF_BASE_S * 2**attempt)
+
+
+def run_turn_events(
     client, history: list, user_message: str, model: str, trace_ctx: dict | None = None
-) -> tuple[str, list, int]:
-    """Run one conversational turn, dispatching tool calls until the model answers.
+):
+    """Run one turn as a stream of events, dispatching tool calls until answered.
+
+    Yields dicts describing live progress, in order:
+      - {"type": "tool_call", "calls": [...]}  once per tool round
+      - {"type": "delta", "text": ...}         per text chunk of the final answer
+      - {"type": "done", "answer": ...}        exactly once, when the turn ends
+
+    Text is streamed live only while no function_call has been seen in the
+    current round; because Gemini emits function_call parts before any text when
+    it decides to call a tool, tool-round reasoning text is naturally suppressed.
+    In the rare case where the model streams text *before* a function_call in the
+    same round, a little interim text may leak — accepted as an edge case rather
+    than buffering (which would defeat live streaming).
 
     When trace_ctx is provided (dict with 'session_id' and 'turn_id'), every
-    model response and tool result is recorded to agent_trace.
+    model response and tool result is recorded to agent_trace, exactly as the
+    blocking path did.
 
-    Returns (answer_text, full_history, step_count).
+    Returns (full_history, step_count) via StopIteration.value so the drainer
+    below can reconstruct run_turn's original contract.
     """
     history = list(history)
     history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
@@ -90,26 +129,47 @@ def run_turn(
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
-        response = _generate(client, model=model, history=history, config=_config())
-        content = response.candidates[0].content
-        history.append(content)
+        text_parts: list[str] = []
+        fn_calls = []
+        for chunk in _generate_stream(
+            client, model=model, history=history, config=_config()
+        ):
+            candidate = chunk.candidates[0]
+            if not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                if part.function_call:
+                    fn_calls.append(part.function_call)
+                elif part.text:
+                    text_parts.append(part.text)
+                    if not fn_calls:
+                        yield {"type": "delta", "text": part.text}
 
-        calls = [p.function_call for p in content.parts if p.function_call]
-        if not calls:
-            text = "".join(p.text for p in content.parts if p.text)
+        full_text = "".join(text_parts)
+
+        # Rebuild the aggregated model turn for history (text first, then calls).
+        agg_parts = []
+        if full_text:
+            agg_parts.append(types.Part(text=full_text))
+        for call in fn_calls:
+            agg_parts.append(types.Part(function_call=call))
+        history.append(types.Content(role="model", parts=agg_parts))
+
+        if not fn_calls:
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],
                     trace_ctx["turn_id"],
                     step,
-                    {"kind": "answer", "text": text},
+                    {"kind": "answer", "text": full_text},
                 )
-            return text, history, step
+            yield {"type": "done", "answer": full_text}
+            return history, step
 
         # Persist tool calls + results as one trace step
         tool_info = []
         result_parts = []
-        for call in calls:
+        for call in fn_calls:
             result = dispatch(call.name, dict(call.args))
             tool_info.append(
                 {
@@ -133,6 +193,7 @@ def run_turn(
                 {"kind": "tool_calls", "calls": tool_info},
             )
 
+        yield {"type": "tool_call", "calls": tool_info}
         history.append(types.Content(role="user", parts=result_parts))
 
     if trace_ctx:
@@ -142,4 +203,32 @@ def run_turn(
             step + 1,
             {"kind": "limit_exceeded", "rounds": MAX_TOOL_ROUNDS},
         )
-    return "I could not finish within the tool-call limit.", history, step + 1
+    fallback = "I could not finish within the tool-call limit."
+    yield {"type": "done", "answer": fallback}
+    return history, step + 1
+
+
+def run_turn(
+    client, history: list, user_message: str, model: str, trace_ctx: dict | None = None
+) -> tuple[str, list, int]:
+    """Run one conversational turn, dispatching tool calls until the model answers.
+
+    Thin drainer over ``run_turn_events``: consumes the event stream and
+    reconstructs the original blocking contract so ``/api/chat`` and existing
+    tests keep working unchanged.
+
+    Returns (answer_text, full_history, step_count).
+    """
+    answer = ""
+    final_history = list(history)
+    step = 0
+    gen = run_turn_events(client, history, user_message, model, trace_ctx)
+    try:
+        while True:
+            event = next(gen)
+            if event["type"] == "done":
+                answer = event["answer"]
+    except StopIteration as stop:
+        if stop.value is not None:
+            final_history, step = stop.value
+    return answer, final_history, step

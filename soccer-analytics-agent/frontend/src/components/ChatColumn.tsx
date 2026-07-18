@@ -18,6 +18,12 @@ export function ChatColumn({ messages, busy, onSend }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
+  // Once the assistant message exists, its own bubble carries the live
+  // incremental content (or the "…" placeholder), so the separate
+  // "Thinking…" bubble is only needed for the brief gap before it appears.
+  const lastMsg = messages[messages.length - 1];
+  const showThinking = busy && (!lastMsg || lastMsg.role !== "assistant");
+
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       {/* Scrollable message area */}
@@ -31,7 +37,7 @@ export function ChatColumn({ messages, busy, onSend }: Props) {
         )}
 
         {/* Loading indicator while busy, shown as a separate bubble */}
-        {busy && messages.length > 0 && (
+        {showThinking && (
           <div className="flex flex-col items-start">
             <span className="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-fg-faint">
               Agent

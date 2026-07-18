@@ -3,7 +3,7 @@ import { HealthPill } from "./components/HealthPill";
 import { ChatColumn } from "./components/ChatColumn";
 import { AnalyticsPanel } from "./components/AnalyticsPanel";
 import { buildSnapshot } from "./lib/analytics";
-import { sendChat, pollTrace, getHealth, ApiError } from "./api";
+import { sendChatStream, getHealth } from "./api";
 import type { HealthStatus, Message } from "./lib/types";
 
 const SESSION_KEY = "soccer_agent_session_id";
@@ -44,6 +44,12 @@ export default function App() {
   const geminiModel = 'gemini-2.5-flash';
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight stream on unmount
+  useEffect(() => {
+    return () => streamAbortRef.current?.abort();
+  }, []);
 
   // ── Health polling (T-025) ──
   useEffect(() => {
@@ -75,110 +81,107 @@ export default function App() {
 
       const sid = sessionRef.current;
       const userMsg: Message = { id: nextId(), role: "user", text: trimmed };
+      const assistantId = nextId();
+      const assistantMsg: Message = {
+        id: assistantId,
+        role: "assistant",
+        text: "",
+        trace: [],
+      };
 
-      // Optimistic: show user message immediately
-      setMessages((prev) => [...prev, userMsg]);
+      // Optimistic: show the user message and an empty assistant message
+      // immediately so tool calls / deltas can populate live.
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setBusy(true);
 
+      // Cancel any previous in-flight stream before starting a new one.
+      streamAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      streamAbortRef.current = ctrl;
+
+      function updateAssistant(updater: (msg: Message) => Message) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? updater(m) : m)),
+        );
+      }
+
       try {
-        // 1. Send to backend
-        const chatResp = await sendChat(trimmed, sid);
-
-        // Update session ID if backend gave a new one
-        if (chatResp.session_id && chatResp.session_id !== sid) {
-          setSessionId(chatResp.session_id);
-          try {
-            localStorage.setItem(SESSION_KEY, chatResp.session_id);
-          } catch {
-            /* storage unavailable */
-          }
-        }
-
-        // 2. Use the server-authoritative turn id (never guess it client-side —
-        //    a local counter desyncs from the backend after a reload).
-        const turnId = chatResp.turn_id;
-
-        const assistantMsg: Message = {
-          id: nextId(),
-          role: "assistant",
-          text: chatResp.answer || "(empty reply)",
-          traceStatus: "loading",
-        };
-
-        setMessages((prev) => [...prev, assistantMsg]);
-
-        // 3. Poll trace endpoint for tool calls
-        const currentSid = chatResp.session_id || sid;
-        const trace = await pollTrace(currentSid, turnId);
-
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === "assistant") {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                trace: trace ?? [],
-                traceStatus: trace ? "loaded" : "unavailable",
-              },
-            ];
-          }
-          return prev;
-        });
+        await sendChatStream(
+          trimmed,
+          sid,
+          {
+            onToolCall: (calls) => {
+              updateAssistant((m) => ({
+                ...m,
+                trace: [...(m.trace ?? []), ...calls],
+              }));
+            },
+            onDelta: (text) => {
+              updateAssistant((m) => ({ ...m, text: m.text + text }));
+            },
+            onDone: (ev) => {
+              if (ev.session_id && ev.session_id !== sessionRef.current) {
+                setSessionId(ev.session_id);
+                try {
+                  localStorage.setItem(SESSION_KEY, ev.session_id);
+                } catch {
+                  /* storage unavailable */
+                }
+              }
+              updateAssistant((m) => ({
+                ...m,
+                text: ev.answer || m.text,
+                traceStatus: "loaded",
+              }));
+            },
+            onError: (ev) => {
+              if (ev.status === 404) {
+                // Session expired — regenerate.
+                const newId = uid();
+                setSessionId(newId);
+                try {
+                  localStorage.setItem(SESSION_KEY, newId);
+                } catch {
+                  /* storage unavailable */
+                }
+                updateAssistant((m) => ({
+                  ...m,
+                  text: "Session expired. A new session has been created. Please try your message again.",
+                  isError: true,
+                }));
+              } else if (ev.status === 429) {
+                // Rate limit — show a fixed, friendly message instead of the
+                // raw provider error, regardless of the backend detail string.
+                updateAssistant((m) => ({
+                  ...m,
+                  text: "The service is receiving too many requests right now. Please wait a few seconds and try again.",
+                  isError: true,
+                }));
+              } else {
+                updateAssistant((m) => ({
+                  ...m,
+                  text: ev.detail || `Error ${ev.status}`,
+                  isError: true,
+                }));
+              }
+            },
+          },
+          ctrl.signal,
+        );
       } catch (err) {
         const errorText =
           err instanceof Error
             ? err.message
             : "An unexpected error occurred. Please try again.";
-
-        // Check for 404 → session expired, regenerate
-        if (err instanceof ApiError && err.status === 404) {
-          const newId = uid();
-          setSessionId(newId);
-          try {
-            localStorage.setItem(SESSION_KEY, newId);
-          } catch {
-            /* storage unavailable */
-          }
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: nextId(),
-              role: "assistant",
-              text: "Session expired. A new session has been created. Please try your message again.",
-              isError: true,
-            },
-          ]);
-        } else if (err instanceof ApiError && err.status === 429) {
-          // Rate limit — show a fixed, friendly message instead of the raw
-          // provider error, regardless of the backend detail string.
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: nextId(),
-              role: "assistant",
-              text: "The service is receiving too many requests right now. Please wait a few seconds and try again.",
-              isError: true,
-            },
-          ]);
-        } else {
-          // General error — show inline error bubble
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: nextId(),
-              role: "assistant",
-              text: errorText,
-              isError: true,
-            },
-          ]);
-        }
+        updateAssistant((m) => ({ ...m, text: errorText, isError: true }));
       } finally {
+        if (streamAbortRef.current === ctrl) {
+          streamAbortRef.current = null;
+        }
         setBusy(false);
       }
     },
-    [busy, messages],
+    [busy],
   );
 
   // ── Analytics snapshot (derived from all messages) ──
