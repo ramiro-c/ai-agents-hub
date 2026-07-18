@@ -48,13 +48,17 @@ ai-agents-hub/
 │   └── scripts/dev.sh            #   Levanta backend :8080 + frontend :5173
 │
 ├── soccer-analytics-agent/       # Agente de analítica de fútbol con loop manual
-│   ├── soccer_agent/             #   loop.py, tools.py, embeddings, memoria 3-capas
-│   ├── db/schema.sql             #   Postgres + pgvector (matches + memoria vectorial)
-│   ├── scripts/                  #   Carga de datos Kaggle (49k partidos), smoke tests
-│   └── tests/                    #   22 tests (unitarios + integración)
+│   ├── soccer_agent/             #   loop, memoria 3-capas, retrieval híbrido, Elo, XGBoost, tracing (9 tools)
+│   ├── backend/                  #   FastAPI (:8081): /chat, /memory, /trace, /team
+│   ├── frontend/                 #   UI de chat en React + TypeScript + Vite
+│   ├── db/schema.sql             #   Postgres + pgvector (matches + docs + memoria + team_elo)
+│   ├── scripts/                  #   Carga Kaggle (49k), cómputo de Elos, smoke tests, dev.sh
+│   ├── CONTEXT.md                #   Fuente de verdad: visión, arquitectura, roadmap
+│   └── tests/                    #   96 tests (unitarios + integración)
 │
 ├── docs/
-│   └── architecture.md           # Racional del monorepo, ADK vs LangGraph, LiteLLM/OpenRouter
+│   ├── architecture.md           # Racional del monorepo, ADK vs LangGraph, LiteLLM/OpenRouter
+│   └── superpowers/              # Specs y planes por fase (soccer agent, phases 0–8)
 │
 ├── .pre-commit-config.yaml       # Ruff lint + format en todos los .py
 ├── pyproject.toml                # Configuración de Ruff compartida
@@ -130,10 +134,10 @@ Ver [career-coach/README.md](career-coach/README.md) para setup completo, deploy
 
 ### Soccer Analytics Agent
 
-Agente de analítica de fútbol con **loop manual** (sin framework de agentes), **memoria de 3 capas** (working/episodic/semantic) y **búsqueda vectorial** con pgvector. Gemini razona y decide qué tool llamar; Postgres + pgvector es la única capa de datos.
+Agente de analítica de fútbol con **loop manual** (sin framework de agentes), **memoria de 3 capas** (working/episodic/semantic), **retrieval híbrido** (pgvector + full-text, RRF), **tracker de Elo**, **predictor XGBoost** (con fallback a Elo) y **observabilidad** que persiste cada paso. 9 tools; Gemini razona y decide cuál llamar. Ahora con **CLI y UI web** (FastAPI + React).
 
 ```
-CLI REPL → Agent loop (hand-written) → Gemini → tools → Postgres + pgvector
+CLI REPL / React UI → Agent loop (hand-written) → Gemini → 9 tools → Postgres + pgvector
 ```
 
 ```bash
@@ -141,16 +145,18 @@ cd soccer-analytics-agent
 uv sync --all-groups                     # instalar dependencias
 docker compose up -d                     # Postgres + pgvector
 uv run python scripts/load_data.py       # dataset Kaggle (49k partidos)
-uv run python -m soccer_agent.cli        # chatear con el agente
+
+uv run python -m soccer_agent.cli        # opción A: chatear por terminal
+./scripts/dev.sh                         # opción B: UI web — backend :8081 + frontend :5173
 ```
 
-Ver [soccer-analytics-agent/README.md](soccer-analytics-agent/README.md) para el diseño completo y [docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md](docs/superpowers/specs/2026-07-10-soccer-analytics-agent-design.md) para la especificación de arquitectura.
+Ver [soccer-analytics-agent/CONTEXT.md](soccer-analytics-agent/CONTEXT.md) (fuente de verdad) y [su README](soccer-analytics-agent/README.md) para el estado actual, tools y roadmap.
 
 ## 🧪 Testing
 
 - **Lint y formato**: Ruff vía pre-commit hooks se ejecuta en cada `git commit`
 - **Tests unitarios**: `adk/.venv/bin/pytest adk/tests/` (18 tests para `model_utils`)
-- **Soccer agent**: `cd soccer-analytics-agent && uv run pytest -q` (22 tests, unitarios + integración con DB)
+- **Soccer agent**: `cd soccer-analytics-agent && uv run pytest -q` (96 tests, unitarios + integración con DB)
 - **Agentes ADK**: `adk run <agent>` para prueba interactiva, `adk web <agent>` para inspección visual
 - **LangGraph**: Ejecutar `lesson2.ipynb` paso a paso en Jupyter/VS Code
 
@@ -183,7 +189,7 @@ Cada subdirectorio tiene su propio entorno:
 | `langgraph/`            | Python 3.13, langchain ≥0.3, langgraph ≥0.4  |
 | `customer-support-chat` | Python 3 (agent + backend) + Node (frontend) |
 | `career-coach` | Python 3.11+ (agent + backend) + Node 20+ (frontend) — Vertex AI + Cloud Run |
-| `soccer-analytics-agent` | Python 3.12+, `uv`, Gemini, `sentence-transformers`, Postgres + pgvector |
+| `soccer-analytics-agent` | Python 3.12+, `uv`, Gemini, `sentence-transformers`, XGBoost/scikit-learn, Postgres + pgvector, FastAPI + React (frontend) |
 
 ## 🤝 Contribuir
 
