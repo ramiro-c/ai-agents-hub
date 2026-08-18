@@ -7,11 +7,14 @@ Blocking calls (respond, DB) run via asyncio.to_thread to avoid event-loop stall
 import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from google.genai import errors
 from pydantic import BaseModel
 from soccer_agent import db, memory, trace
@@ -22,7 +25,44 @@ from soccer_agent.tools import get_team_elo, get_team_form
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Soccer Analytics Agent", version="0.1.0")
+# Repo-relative path to the built React app — resolved from the project root so
+# it keeps working inside the container (app root is /app, dist at frontend/dist).
+DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+class _DistFiles(StaticFiles):
+    """StaticFiles over ``DIST_DIR``, resolved at request time.
+
+    Reads ``backend.main.DIST_DIR`` on every lookup so tests can point the SPA
+    at a tmp directory without rebuilding the app; production keeps the
+    repo-relative ``frontend/dist`` layout.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(directory=None, html=True, check_dir=False)
+
+    def lookup_path(self, path: str):
+        self.directory = DIST_DIR
+        return super().lookup_path(path)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Fail fast at startup when the frontend build is missing.
+
+    The SPA shell is part of the deployable unit; never serve a broken
+    partial app. Offline tests construct TestClient without entering the
+    context, so they stay green without a dist dir.
+    """
+    if not (DIST_DIR / "index.html").is_file():
+        raise RuntimeError(
+            f"frontend build missing: {DIST_DIR / 'index.html'} not found — "
+            "run `npm run build` in frontend/ before starting the server"
+        )
+    yield
+
+
+app = FastAPI(title="Soccer Analytics Agent", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -248,3 +288,22 @@ async def list_teams():
     return {
         "teams": [{"name": r[0], "elo": round(r[1], 1)} for r in rows],
     }
+
+
+# ---------------------------------------------------------------------------
+# SPA static serving — mounted LAST so every /api route above wins.
+# ---------------------------------------------------------------------------
+
+
+@app.exception_handler(404)
+async def spa_fallback(request: Request, exc):
+    """Serve the SPA shell for non-API misses; keep /api/* 404s as JSON."""
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    index = DIST_DIR / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
+app.mount("/", _DistFiles(), name="spa")

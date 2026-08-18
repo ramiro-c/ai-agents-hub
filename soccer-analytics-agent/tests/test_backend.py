@@ -91,3 +91,67 @@ class TestTeams:
             t = data["teams"][0]
             assert "name" in t
             assert "elo" in t
+
+
+@pytest.fixture
+def spa_client(monkeypatch, tmp_path):
+    """TestClient with DIST_DIR pointed at a tmp dir holding a built index.html.
+
+    The SPA mount resolves its directory at request time, so pointing the
+    module global at the tmp dir is enough — no app rebuild needed.
+    """
+    index = tmp_path / "index.html"
+    index.write_text(
+        "<!doctype html><html><head><title>Test SPA</title></head>"
+        "<body>soccer agent</body></html>"
+    )
+    monkeypatch.setattr("backend.main.DIST_DIR", tmp_path)
+    from backend.main import app
+
+    return TestClient(app)
+
+
+class TestSpaRouting:
+    def test_root_serves_index(self, spa_client):
+        resp = spa_client.get("/")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "soccer agent" in resp.text
+
+    def test_deep_route_serves_index(self, spa_client):
+        resp = spa_client.get("/client/route")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "soccer agent" in resp.text
+
+    def test_api_health_stays_json(self, spa_client, monkeypatch):
+        class FakeConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def execute(self, *args, **kwargs):
+                return None
+
+        monkeypatch.setattr("backend.main.db.connect", lambda: FakeConn())
+        resp = spa_client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json()["status"] == "ok"
+
+    def test_api_404_stays_json(self, spa_client):
+        resp = spa_client.get("/api/nope")
+        assert resp.status_code == 404
+        assert resp.headers["content-type"].startswith("application/json")
+        assert resp.json()["detail"] == "Not Found"
+
+    def test_lifespan_raises_without_dist(self, monkeypatch, tmp_path):
+        from backend.main import app
+
+        # Point DIST_DIR at a tmp dir with NO index.html (build missing).
+        monkeypatch.setattr("backend.main.DIST_DIR", tmp_path)
+        with pytest.raises(RuntimeError, match="frontend build missing"):
+            with TestClient(app) as _client:
+                pass
