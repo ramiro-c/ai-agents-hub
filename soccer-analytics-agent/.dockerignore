@@ -1,0 +1,32 @@
+# Build context exclusions — keep the image lean and secret-free.
+
+# VCS
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.cachebro
+
+# Env / credentials — NEVER in the image
+.env
+.secrets
+
+# Tests are not shipped in the runtime image
+tests
+
+# Frontend artifacts are rebuilt in stage 1 (dist is excluded from context)
+frontend/node_modules
+frontend/dist
+
+# Local tooling
+node_modules
+.playwright-mcp
+.atl
+
+# NOTE: data/ is intentionally KEPT — xgboost_match_predictor.joblib (5.9MB)
+# is baked into the image for reproducible, download-free cold starts.

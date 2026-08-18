@@ -1,0 +1,22 @@
+# Build the soccer-agent image and push it to Artifact Registry (us-central1).
+#
+# Usage (from the soccer-analytics-agent project root):
+#   gcloud builds submit --project gen-lang-client-0049374628 \
+#     --config cloudbuild.yaml \
+#     --substitutions _TAG=$(git rev-parse --short HEAD)
+#
+# The image is big (torch + lightgbm wheels), so the timeout accounts for
+# wheel downloads; the multi-stage build keeps the final image slim.
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "us-central1-docker.pkg.dev/${PROJECT_ID}/soccer-agent/soccer-agent:${_TAG}"
+      - "."
+
+images:
+  - "us-central1-docker.pkg.dev/${PROJECT_ID}/soccer-agent/soccer-agent:${_TAG}"
+
+timeout: "1800s"
