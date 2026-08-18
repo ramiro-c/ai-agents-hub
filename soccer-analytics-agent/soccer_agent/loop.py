@@ -55,6 +55,74 @@ SYSTEM_PROMPT = (
     "not a fact in this conversation."
 )
 
+# Grounding enforcement. Prompt instructions alone are not enough: Gemini's
+# parametric prior can outweigh them (e.g. "the 2026 World Cup has not been
+# played yet"). If the model tries to answer a factual match question on the
+# first pass without calling any tool, the loop injects exactly ONE re-ask
+# that forces a tool round, then accepts whatever comes next. Never nudges
+# more than once per user message, and never nudges non-factual queries.
+_QUESTION_HINTS = (
+    "who ",
+    "what ",
+    "when ",
+    "where ",
+    "why ",
+    "how ",
+    "which ",
+    "¿qué",
+    "¿quién",
+    "¿cuál",
+    "¿cómo",
+    "¿cuándo",
+    "¿dónde",
+    "?",
+    "won",
+    "score",
+    "result",
+    "ganó",
+)
+_FACT_HINTS = (
+    "match",
+    "game",
+    "team",
+    "tournament",
+    "cup",
+    "world cup",
+    "champion",
+    "winner",
+    "goal",
+    "score",
+    "result",
+    "won",
+    "beat",
+    "defeat",
+    "h2h",
+    "form",
+    "elo",
+    "prediction",
+    "partido",
+    "torneo",
+    "copa",
+    "campeón",
+    "gol",
+    "marcador",
+    "resultado",
+    "equipo",
+)
+GROUNDING_REASK = (
+    "[SYSTEM] You must call a tool from your available functions before "
+    "answering this question. Query the database for match facts. If the tools "
+    "cannot answer definitively, state exactly what data is missing."
+)
+
+
+def _needs_grounding(query: str) -> bool:
+    """True when a user question plausibly asks for database-backed match facts."""
+    lowered = query.lower()
+    return any(hint in lowered for hint in _QUESTION_HINTS) and any(
+        hint in lowered for hint in _FACT_HINTS
+    )
+
 
 def _config() -> types.GenerateContentConfig:
     return types.GenerateContentConfig(
@@ -134,6 +202,8 @@ def run_turn_events(
     history = list(history)
     history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
     step = 0
+    grounding_nudge_used = False
+    any_tool_calls_this_turn = False
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
@@ -175,6 +245,19 @@ def run_turn_events(
                 full_text = (
                     "I could not generate a response this time. Please try again."
                 )
+            if (
+                not grounding_nudge_used
+                and not any_tool_calls_this_turn
+                and _needs_grounding(user_message)
+            ):
+                # Bounded grounding enforcement: the model tried to answer a
+                # factual question without calling any tool. Inject ONE re-ask
+                # forcing a tool round, then continue the loop.
+                grounding_nudge_used = True
+                history.append(
+                    types.Content(role="user", parts=[types.Part(text=GROUNDING_REASK)])
+                )
+                continue
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],
@@ -185,6 +268,7 @@ def run_turn_events(
             yield {"type": "done", "answer": full_text}
             return history, step
 
+        any_tool_calls_this_turn = True
         # Persist tool calls + results as one trace step
         tool_info = []
         result_parts = []

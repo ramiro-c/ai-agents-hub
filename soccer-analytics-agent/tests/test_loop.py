@@ -179,3 +179,61 @@ def test_system_prompt_enforces_tool_grounding():
     assert "ALWAYS call a" in SYSTEM_PROMPT
     assert "NULL" in SYSTEM_PROMPT
     assert "not a fact in this conversation" in SYSTEM_PROMPT
+
+
+def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
+    """A text-only answer to a match question triggers ONE tool-forcing re-ask."""
+    calls = []
+    monkeypatch.setattr(
+        "soccer_agent.loop.dispatch",
+        lambda name, args: (
+            calls.append((name, args)) or {"rows": [["Spain 1 - 0 Argentina"]]}
+        ),
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                # 1) hallucination: answers from memory, no tool call
+                _response(
+                    [types.Part(text="The 2026 World Cup has not been played yet.")]
+                ),
+                # 2) after the grounding nudge: finally calls a tool
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": "SELECT * FROM matches"},
+                        )
+                    ]
+                ),
+                # 3) grounded answer from the tool result
+                _response([types.Part(text="Spain beat Argentina 1-0 in the final.")]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "who won the 2026 World Cup?", model="test"
+    )
+
+    # The nudge appears in the second model call's history (last user part).
+    second_call_texts = ""
+    for content in fake.models.calls[1]:
+        for part in content.parts:
+            second_call_texts += getattr(part, "text", "") or ""
+    assert "call a tool" in second_call_texts
+    # Tool was actually dispatched after the nudge.
+    assert calls and calls[0][0] == "sql_query"
+    # Final answer is grounded.
+    assert "Spain" in answer and "1-0" in answer
+    # history: user msg, hallucinated answer, nudge, tool call, result, answer = 6
+    assert len(history) == 6
+
+
+def test_run_turn_grounding_nudge_never_fires_for_chit_chat():
+    """Non-factual questions are never forced into a tool round."""
+    fake = SimpleNamespace(models=FakeModels([_response([types.Part(text="Hi!")])]))
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
+    assert answer == "Hi!"
+    assert len(history) == 2
+    assert len(fake.models.calls) == 1  # no extra nudge round
