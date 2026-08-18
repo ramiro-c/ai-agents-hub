@@ -1,0 +1,36 @@
+# gcloud builds submit source exclusions.
+#
+# When present, this file REPLACES gcloud's automatic .gitignore conversion
+# (which would exclude data/ and break `COPY data/` in the Dockerfile).
+# Keep in sync with .dockerignore.
+
+# VCS
+.git
+.gitignore
+
+# Python
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.cachebro
+
+# Env / credentials — never uploaded
+.env
+.secrets
+
+# Tests are not needed at build time
+tests
+
+# Frontend artifacts are rebuilt in stage 1 (source still uploaded)
+frontend/node_modules
+frontend/dist
+
+# Local tooling
+node_modules
+.playwright-mcp
+.atl
+
+# data/ is intentionally NOT ignored — xgboost_match_predictor.joblib
+# (committed via git add -f) is baked into the image.
