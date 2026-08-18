@@ -44,8 +44,9 @@ export P=gen-lang-client-0049374628
 ## 2. One-time GCP setup
 
 ```bash
-# 2.1 Enable the APIs (run, artifactregistry, sqladmin, secretmanager, cloudbuild)
-gcloud services enable sqladmin secretmanager run cloudbuild artifactregistry.googleapis.com --project $P
+# 2.1 Enable the APIs — sql-component is REQUIRED for Cloud Run->Cloud SQL
+#     unix-socket attach (deploy fails with an interactive prompt otherwise).
+gcloud services enable sqladmin secretmanager run cloudbuild artifactregistry sql-component --project $P
 
 # 2.2 Artifact Registry repo (docker, us-central1)
 gcloud artifacts repositories create soccer-agent --repository-format docker --location us-central1 --project $P
@@ -89,7 +90,13 @@ pg_dump -Fc -d postgresql://soccer:soccer@localhost:5433/soccer -f /tmp/soccer.d
 
 # 4.2 Tunnel to Cloud SQL with the Auth Proxy
 #     (install: https://cloud.google.com/sql/docs/mysql/sql-proxy)
-cloud-sql-proxy $P:us-central1:soccer-agent-db --port 5432 &
+#     ZSH GOTCHA: quote the connection name — unquoted $P:us-central1 makes
+#     zsh treat :u as an uppercase modifier (connection becomes
+#     GEN-LANG-CLIENT-0049374628s-central1). Quote it as "${P}:us-central1:...".
+#     If the proxy fails with USER_PROJECT_DENIED / "project ... has been
+#     deleted", the host ADC file has a stale quota_project_id — fix with:
+#       gcloud auth application-default set-quota-project $P
+cloud-sql-proxy "${P}:us-central1:soccer-agent-db" --port 5432 &
 #     Wait for the proxy to report ready, then:
 
 # 4.3 Create the database
@@ -103,14 +110,17 @@ pg_restore -h localhost -p 5432 -U postgres -d soccer --no-owner /tmp/soccer.dum
 # 4.5 Drop local session data — Cloud SQL starts with clean memory/traces
 psql -h localhost -p 5432 -U postgres -d soccer -c "TRUNCATE working_memory, episodic_memory, semantic_memory, agent_trace;"
 
-# 4.6 App role: read-only on data tables, INSERT-only on the write tables.
+# 4.6 App role: read-only on data tables, SELECT+INSERT on the write tables.
+#     SELECT on memory/trace tables is REQUIRED — the agent reads them at
+#     runtime (working-memory seeding, episodic recall, /api/sessions/{id}/trace).
+#     INSERT-only grants produce "permission denied for table working_memory".
 #     GRANT USAGE ON ALL SEQUENCES is required — memory/trace inserts use
 #     BIGSERIAL nextval and 500 without it.
 APP_PASS=$(openssl rand -base64 18)
 psql -h localhost -p 5432 -U postgres -d soccer -v ON_ERROR_STOP=1 -c \
   "CREATE ROLE soccer_app LOGIN PASSWORD '$APP_PASS';
    GRANT SELECT ON matches, goalscorers, shootouts, match_documents, team_elo TO soccer_app;
-   GRANT INSERT ON working_memory, episodic_memory, semantic_memory, agent_trace TO soccer_app;
+   GRANT SELECT, INSERT ON working_memory, episodic_memory, semantic_memory, agent_trace TO soccer_app;
    GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO soccer_app;"
 
 # 4.7 Verify the migration
@@ -138,6 +148,10 @@ printf 'postgresql://soccer_app:%s@/soccer?host=/cloudsql/%s:us-central1:soccer-
 ## 6. Deploy to Cloud Run
 
 ```bash
+#   GOTCHA 1: quote --add-cloudsql-instances (zsh :u modifier — same as 4.2).
+#   GOTCHA 2: --set-secrets needs the PROJECT NUMBER (PN), not the project ID,
+#     and the whole value must be quoted (zsh eats :latest via :l).
+#     PN=$(gcloud projects describe $P --format='value(projectNumber)')
 # Full flags: public URL, 600s timeout (model calls), 2Gi memory (models),
 # min-instances 1 (warm demos; scale-to-zero = change 1 -> 0),
 # Cloud SQL unix socket attached, DATABASE_URL from Secret Manager,
@@ -146,8 +160,8 @@ printf 'postgresql://soccer_app:%s@/soccer?host=/cloudsql/%s:us-central1:soccer-
 gcloud run deploy soccer-agent --project $P --region us-central1 \
   --image us-central1-docker.pkg.dev/$P/soccer-agent/soccer-agent:$_TAG \
   --allow-unauthenticated --timeout 600 --memory 2Gi --min-instances 1 \
-  --add-cloudsql-instances $P:us-central1:soccer-agent-db \
-  --set-secrets DATABASE_URL=projects/$P/secrets/DATABASE_URL:latest \
+  --add-cloudsql-instances "${P}:us-central1:soccer-agent-db" \
+  --set-secrets "DATABASE_URL=projects/$PN/secrets/DATABASE_URL:latest" \
   --service-account soccer-agent@$P.iam.gserviceaccount.com \
   --set-env-vars GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=$P,GOOGLE_CLOUD_LOCATION=us-central1
 
@@ -161,7 +175,8 @@ gcloud run services describe soccer-agent --project $P --region us-central1 \
 ```bash
 # Grounded smoke test against the public URL — asserts health ok, chat answer
 # contains digits, and the session trace shows >=1 real tool call.
-SMOKE_TEST_BASE_URL=<service-url> uv run python scripts/smoke_test.py
+# THIS MAC: the uv venv lacks macOS CA certs — run with SSL_CERT_FILE:
+SSL_CERT_FILE=/etc/ssl/cert.pem SMOKE_TEST_BASE_URL=<service-url> uv run python scripts/smoke_test.py
 # Expected output: "SMOKE TEST OK"
 ```
 
