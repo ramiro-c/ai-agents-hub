@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from google.genai import types
+from google.genai import errors, types
 from soccer_agent.loop import run_turn
 
 
@@ -31,6 +31,31 @@ class FakeModels:
 def _response(parts):
     content = types.Content(role="model", parts=parts)
     return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+
+
+class RateLimitedModels:
+    """Scripted Gemini: 429 quota error on the first N stream calls, then answers."""
+
+    def __init__(self, error_calls, response):
+        self._error_calls = error_calls
+        self._response = response
+        self.calls = 0
+
+    def generate_content_stream(self, *, model, contents, config):
+        if self.calls < self._error_calls:
+            self.calls += 1
+            raise errors.ClientError(
+                code=429,
+                response_json={
+                    "error": {
+                        "code": 429,
+                        "message": "RESOURCE_EXHAUSTED",
+                        "status": "RESOURCE_EXHAUSTED",
+                    }
+                },
+            )
+        self.calls += 1
+        yield self._response
 
 
 def test_run_turn_dispatches_tool_then_answers(monkeypatch):
@@ -128,3 +153,21 @@ def test_run_turn_all_empty_chunks_answers_gracefully():
     assert answer  # graceful fallback, never an empty answer
     assert "could not" in answer
     assert len(history) == 1  # only the user message; no empty model turn
+
+
+def test_run_turn_retries_on_429_rate_limit(monkeypatch):
+    """A Vertex 429 (per-minute quota) is retried with backoff, never crashing."""
+    sleeps = []
+    monkeypatch.setattr("soccer_agent.loop.time.sleep", sleeps.append)
+    fake = SimpleNamespace(
+        models=RateLimitedModels(
+            error_calls=2, response=_response([types.Part(text="Fine.")])
+        )
+    )
+
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
+
+    assert fake.models.calls == 3  # 2 rate-limited attempts + 1 success
+    assert sleeps == [2.0, 4.0]  # exponential backoff: base 2s * 2**attempt
+    assert answer == "Fine."
+    assert len(history) == 2  # user message + model answer, no empty turn
