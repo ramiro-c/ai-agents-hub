@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from google.genai import errors, types
-from soccer_agent.loop import run_turn
+from soccer_agent.loop import SYSTEM_PROMPT, run_turn
 
 
 class FakeModels:
@@ -171,3 +171,11 @@ def test_run_turn_retries_on_429_rate_limit(monkeypatch):
     assert sleeps == [2.0, 4.0]  # exponential backoff: base 2s * 2**attempt
     assert answer == "Fine."
     assert len(history) == 2  # user message + model answer, no empty turn
+
+
+def test_system_prompt_enforces_tool_grounding():
+    """Match facts must be tool-backed; the model must never answer from memory."""
+    assert "GROUNDING" in SYSTEM_PROMPT
+    assert "ALWAYS call a" in SYSTEM_PROMPT
+    assert "NULL" in SYSTEM_PROMPT
+    assert "not a fact in this conversation" in SYSTEM_PROMPT
