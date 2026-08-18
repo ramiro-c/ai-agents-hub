@@ -187,6 +187,13 @@ curl -s <service-url>/api/health                      # {"status":"ok","db":"con
 curl -s <service-url>/                                # React index.html
 curl -s <service-url>/client/some/deep/route          # index.html (SPA fallback)
 curl -s <service-url>/api/nope                        # JSON 404, not HTML
+
+# ASSET CHECK — the strongest UI test. The index.html references a hashed JS
+# (assets/index-XXXX.js). That asset MUST be served as text/javascript (375KB+),
+# never as text/html. If it comes back text/html with index.html bytes, the
+# StaticFiles mount is dead (production bug: blank UI — see fix de56037).
+curl -sI <service-url>/$(curl -s <service-url>/ | grep -o 'assets/index-[^"]*\.js' | head -1) \
+  | grep -i content-type   # expect: text/javascript; charset=utf-8
 ```
 
 Health contract: Cloud Run's TCP probe passes as long as uvicorn listens;
