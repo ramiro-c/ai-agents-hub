@@ -134,6 +134,9 @@ def run_turn_events(
         for chunk in _generate_stream(
             client, model=model, history=history, config=_config()
         ):
+            if not chunk.candidates:
+                # Safety block / MAX_TOKENS finish: no candidate to read.
+                continue
             candidate = chunk.candidates[0]
             if not candidate.content or not candidate.content.parts:
                 continue
@@ -153,9 +156,17 @@ def run_turn_events(
             agg_parts.append(types.Part(text=full_text))
         for call in fn_calls:
             agg_parts.append(types.Part(function_call=call))
-        history.append(types.Content(role="model", parts=agg_parts))
+        if agg_parts:
+            history.append(types.Content(role="model", parts=agg_parts))
 
         if not fn_calls:
+            if not full_text:
+                # Every chunk was empty (safety block, MAX_TOKENS finish, or a
+                # response filtered entirely by the guards above): complete the
+                # turn with a graceful message instead of an empty answer.
+                full_text = (
+                    "I could not generate a response this time. Please try again."
+                )
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],

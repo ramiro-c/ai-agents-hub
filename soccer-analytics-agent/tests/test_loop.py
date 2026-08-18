@@ -18,8 +18,14 @@ class FakeModels:
     def generate_content_stream(self, *, model, contents, config):
         # The real client streams; each scripted response is emitted as a
         # single chunk (its candidate/content/parts shape matches a chunk).
+        # A scripted response given as a *list* is emitted as a multi-chunk
+        # stream, for guard/regression tests that mix empty and valid chunks.
         self.calls.append(contents)
-        yield self._responses.pop(0)
+        response = self._responses.pop(0)
+        if isinstance(response, list):
+            yield from response
+        else:
+            yield response
 
 
 def _response(parts):
@@ -64,3 +70,61 @@ def test_run_turn_plain_answer_no_tools():
     answer, history, steps = run_turn(fake, [], "hello", model="test")
     assert answer == "Hi!"
     assert len(history) == 2
+
+
+def test_run_turn_skips_empty_candidates_chunk():
+    """A safety-block / MAX_TOKENS chunk with no candidates must be skipped."""
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                [
+                    SimpleNamespace(candidates=[]),
+                    _response([types.Part(text="Fine.")]),
+                ]
+            ]
+        )
+    )
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
+    assert answer == "Fine."
+    assert len(history) == 2  # user message + model answer, no empty turn
+
+
+def test_run_turn_skips_chunk_with_none_parts():
+    """A candidate whose content.parts is None must be skipped, not crashed on."""
+    none_parts = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=None))]
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                [
+                    none_parts,
+                    _response([types.Part(text="Fine.")]),
+                ]
+            ]
+        )
+    )
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
+    assert answer == "Fine."
+    assert len(history) == 2
+
+
+def test_run_turn_all_empty_chunks_answers_gracefully():
+    """A turn whose chunks are ALL empty completes with fallback text."""
+    none_parts = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=None))]
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                [
+                    SimpleNamespace(candidates=[]),
+                    none_parts,
+                ]
+            ]
+        )
+    )
+    answer, history, steps = run_turn(fake, [], "hello", model="test")
+    assert answer  # graceful fallback, never an empty answer
+    assert "could not" in answer
+    assert len(history) == 1  # only the user message; no empty model turn
