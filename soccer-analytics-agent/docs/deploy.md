@@ -79,8 +79,10 @@ Timeout is 1800s in `cloudbuild.yaml` — the torch/lightgbm wheels are large.
 ## 4. Migrate the database
 
 ```bash
-# 4.1 Dump the local DB (224MB: 49,505 matches, 47,891 goalscorers,
-#     682 shootouts, 49,510 match_documents + embeddings, 336 team_elo)
+# 4.1 Dump the local DB (224MB: 49,520 matches, 47,903 goalscorers,
+#     683 shootouts, 49,520 match_documents + embeddings, 337 team_elo)
+#     Counts reflect the Kaggle dataset refresh (v136, 2026-08) — if you
+#     refresh again, re-check them with the query in section 4.7.
 pg_dump -Fc -d postgresql://soccer:soccer@localhost:5433/soccer -f /tmp/soccer.dump
 
 # 4.2 Tunnel to Cloud SQL with the Auth Proxy
@@ -114,7 +116,7 @@ psql -h localhost -p 5432 -U postgres -d soccer -c \
   "SELECT (SELECT count(*) FROM matches) AS matches,
           (SELECT count(*) FROM match_documents) AS docs,
           (SELECT count(*) FROM team_elo) AS elos;"
-# Expect: 49505 | 49510 | 336
+# Expect: 49520 | 49520 | 337
 psql -h localhost -p 5432 -U postgres -d soccer -c \
   "SELECT indexname, indexdef FROM pg_indexes WHERE tablename IN ('match_documents','team_elo');"
 # Expect HNSW (vector) + GIN (tsvector) indexes restored.
