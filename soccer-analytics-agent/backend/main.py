@@ -6,6 +6,7 @@ Blocking calls (respond, DB) run via asyncio.to_thread to avoid event-loop stall
 
 import asyncio
 import json
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,14 +37,28 @@ class _DistFiles(StaticFiles):
     Reads ``backend.main.DIST_DIR`` on every lookup so tests can point the SPA
     at a tmp directory without rebuilding the app; production keeps the
     repo-relative ``frontend/dist`` layout.
+
+    Starlette >= 1.0 caches ``all_directories`` in ``__init__`` and
+    ``lookup_path`` iterates that cache (not ``self.directory``), so a plain
+    ``directory=None`` mount never finds files at runtime. We bypass the
+    cache entirely and resolve every lookup against the current ``DIST_DIR``.
     """
 
     def __init__(self) -> None:
         super().__init__(directory=None, html=True, check_dir=False)
 
     def lookup_path(self, path: str):
-        self.directory = DIST_DIR
-        return super().lookup_path(path)
+        if path.startswith(("/", "\\")):
+            return "", None
+        root = os.path.realpath(DIST_DIR)
+        full_path = os.path.realpath(os.path.join(root, path))
+        if os.path.commonpath([full_path, root]) != root:
+            # Path traversal guard — do not escape the served directory.
+            return "", None
+        try:
+            return full_path, os.stat(full_path)
+        except (FileNotFoundError, NotADirectoryError):
+            return "", None
 
 
 @asynccontextmanager

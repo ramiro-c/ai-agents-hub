@@ -105,6 +105,9 @@ def spa_client(monkeypatch, tmp_path):
         "<!doctype html><html><head><title>Test SPA</title></head>"
         "<body>soccer agent</body></html>"
     )
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "app.js").write_text("console.log('real asset');")
     monkeypatch.setattr("backend.main.DIST_DIR", tmp_path)
     from backend.main import app
 
@@ -123,6 +126,19 @@ class TestSpaRouting:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "soccer agent" in resp.text
+
+    def test_assets_served_by_mount(self, spa_client):
+        """Assets must come from the StaticFiles mount with real content types.
+
+        Regression: the old _DistFiles empty-directory mount served nothing, so
+        every /assets/* request fell through to the SPA fallback and returned
+        index.html as text/html — the browser refused to run HTML as a JS
+        module and the UI stayed blank.
+        """
+        resp = spa_client.get("/assets/app.js")
+        assert resp.status_code == 200
+        assert "text/html" not in resp.headers["content-type"]
+        assert "console.log('real asset');" in resp.text
 
     def test_api_health_stays_json(self, spa_client, monkeypatch):
         class FakeConn:
