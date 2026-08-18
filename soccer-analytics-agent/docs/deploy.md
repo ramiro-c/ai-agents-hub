@@ -56,7 +56,9 @@ gcloud projects add-iam-policy-binding $P --member serviceAccount:$PN@cloudbuild
 
 # 2.4 Cloud SQL instance (POSTGRES_16, pgvector built in)
 #     Free-trial tier db-f1-micro preferred; if ineligible, use db-g1-small (~$25/mo).
-gcloud sql instances create soccer-agent-db --project $P --region us-central1 --database-version POSTGRES_16 --tier db-f1-micro --root-password "$(openssl rand -base64 24)"
+#     --edition enterprise is REQUIRED in 2026: Cloud SQL now defaults to
+#     ENTERPRISE_PLUS, which does not offer the small (db-f1-micro/db-g1-small) tiers.
+gcloud sql instances create soccer-agent-db --project $P --region us-central1 --database-version POSTGRES_16 --tier db-f1-micro --edition enterprise --root-password "$(openssl rand -base64 24)"
 
 # 2.5 IAM for the app service account (Vertex aiplatform.user already granted)
 gcloud projects add-iam-policy-binding $P --member serviceAccount:soccer-agent@$P.iam.gserviceaccount.com --role roles/cloudsql.client
