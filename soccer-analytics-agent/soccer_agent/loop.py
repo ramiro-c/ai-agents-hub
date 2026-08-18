@@ -55,6 +55,13 @@ SYSTEM_PROMPT = (
     "not a fact in this conversation."
 )
 
+
+ERROR_RETRY_REASK = (
+    "[SYSTEM] The last tool call failed with an error. Inspect the error, fix your "
+    "query/approach, and call the tool again. If you are sure no tool can answer, "
+    "state exactly what data is missing."
+)
+
 # Grounding enforcement. Prompt instructions alone are not enough: Gemini's
 # parametric prior can outweigh them (e.g. "the 2026 World Cup has not been
 # played yet"). If the model tries to answer a factual match question on the
@@ -204,6 +211,8 @@ def run_turn_events(
     step = 0
     grounding_nudge_used = False
     any_tool_calls_this_turn = False
+    error_retry_used = False
+    last_tool_error = False
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
@@ -258,6 +267,21 @@ def run_turn_events(
                     types.Content(role="user", parts=[types.Part(text=GROUNDING_REASK)])
                 )
                 continue
+            if (
+                not error_retry_used
+                and last_tool_error
+                and _needs_grounding(user_message)
+            ):
+                # Bounded error-driven retry: the last tool round errored and the
+                # model still tried to answer from memory. Inject ONE retry that
+                # forces it to fix the query/approach, then continue the loop.
+                error_retry_used = True
+                history.append(
+                    types.Content(
+                        role="user", parts=[types.Part(text=ERROR_RETRY_REASK)]
+                    )
+                )
+                continue
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],
@@ -297,6 +321,10 @@ def run_turn_events(
             )
 
         yield {"type": "tool_call", "calls": tool_info}
+        last_tool_error = any(
+            isinstance(ti["result"], dict) and "error" in ti["result"]
+            for ti in tool_info
+        )
         history.append(types.Content(role="user", parts=result_parts))
 
     if trace_ctx:

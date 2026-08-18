@@ -237,3 +237,70 @@ def test_run_turn_grounding_nudge_never_fires_for_chit_chat():
     assert answer == "Hi!"
     assert len(history) == 2
     assert len(fake.models.calls) == 1  # no extra nudge round
+
+
+def test_run_turn_error_retry_after_bad_query(monkeypatch):
+    """A failed tool round followed by a text-only answer triggers ONE retry nudge."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        if "winner" in args.get("sql", ""):
+            return {"error": 'column "winner" does not exist'}
+        return {"rows": [["Spain", "Argentina", 1, 0]]}
+
+    good_sql = (
+        "SELECT home_team, away_team, home_score, away_score "
+        "FROM matches WHERE tournament ILIKE '%World Cup%' "
+        "ORDER BY match_date DESC LIMIT 5"
+    )
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                # 1) bad query: tool call that will ERROR (no winner column)
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": "SELECT winner FROM matches"},
+                        )
+                    ]
+                ),
+                # 2) after the error result, the model answers from memory
+                _response(
+                    [types.Part(text="That tournament has not taken place yet.")]
+                ),
+                # 3) after the error-retry nudge: a GOOD tool call
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": good_sql},
+                        )
+                    ]
+                ),
+                # 4) grounded answer from the good tool result
+                _response([types.Part(text="Spain beat Argentina 1-0 in the final.")]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "who won the 2026 World Cup?", model="test"
+    )
+
+    # The error-retry nudge appears in the third model call's history.
+    third_call_texts = ""
+    for content in fake.models.calls[2]:
+        for part in content.parts:
+            third_call_texts += getattr(part, "text", "") or ""
+    assert "failed with an error" in third_call_texts
+    # Two tool rounds dispatched: the bad query and the fixed query.
+    assert len(fetch_calls) == 2
+    assert "winner" in fetch_calls[0][1]["sql"]
+    assert "home_score" in fetch_calls[1][1]["sql"]
+    # Final answer is grounded, not a memory hallucination.
+    assert "Spain" in answer and "1-0" in answer
+    # user, bad call, error result, text answer, nudge, good call, result, answer
+    assert len(history) == 8
