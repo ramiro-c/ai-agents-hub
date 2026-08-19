@@ -32,8 +32,12 @@ dist/
 # Ruff
 .ruff_cache/
 
+# Git worktrees (local isolated checkouts)
+.worktrees/
+
 # AI agent tooling artifacts (local, not for sharing)
-.atl/
+**/.atl/
 
 # Misc
-.cachebro/
+**/.cachebro/
+**/.superpowers/
