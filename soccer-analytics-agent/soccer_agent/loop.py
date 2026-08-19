@@ -1,6 +1,7 @@
 """Hand-written agent loop: model -> tool calls -> tool results -> model."""
 
 import time
+from functools import lru_cache
 
 from google.genai import errors, types
 
@@ -199,37 +200,32 @@ _CHALLENGE_EXEMPLARS = (
 CHALLENGE_SIMILARITY_THRESHOLD = 0.80
 
 
-def _challenge_exemplar_vectors():
+@lru_cache(maxsize=1)
+def _challenge_exemplar_vectors() -> tuple[list[float], ...]:
     """Embedded exemplars, computed once per process."""
-    from soccer_agent.embeddings import embed
+    from soccer_agent.embeddings import embed_batch
 
-    return tuple(embed(ex) for ex in _CHALLENGE_EXEMPLARS)
+    return tuple(embed_batch(_CHALLENGE_EXEMPLARS))
 
 
 def _semantic_is_challenge(message: str) -> bool:
-    """True when the message is semantically close to a challenge exemplar."""
     try:
-        from soccer_agent.embeddings import embed
+        from soccer_agent.embeddings import cosine_similarity, embed
 
         vector = embed(message)
         return (
             max(
-                sum(a * b for a, b in zip(vector, exemplar))
+                cosine_similarity(vector, exemplar)
                 for exemplar in _challenge_exemplar_vectors()
             )
             >= CHALLENGE_SIMILARITY_THRESHOLD
         )
-    except Exception:
+    except (ImportError, OSError, RuntimeError):
         return False
 
 
 def _is_challenge(message: str) -> bool:
-    """True when a user message signals doubt about a previous answer.
-
-    Two layers: exact lexical hints first (zero-latency, precise), then a
-    MiniLM semantic check against curated challenge exemplars (recall for
-    paraphrases the list cannot enumerate).
-    """
+    """True when the user message signals doubt about a previous answer."""
     lowered = message.lower()
     if any(hint in lowered for hint in _CHALLENGE_HINTS):
         return True

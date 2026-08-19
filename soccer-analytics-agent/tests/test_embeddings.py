@@ -3,6 +3,18 @@ import math
 import pytest
 
 
+def test_cosine_similarity_identical_unit_vectors():
+    from soccer_agent.embeddings import cosine_similarity
+
+    assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_orthogonal():
+    from soccer_agent.embeddings import cosine_similarity
+
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
 @pytest.mark.integration
 def test_embed_dimension_and_normalization():
     from soccer_agent.embeddings import DIM, embed
@@ -15,13 +27,10 @@ def test_embed_dimension_and_normalization():
 
 @pytest.mark.integration
 def test_embed_similar_texts_closer_than_unrelated():
-    from soccer_agent.embeddings import embed
-
-    def cosine(a, b):
-        return sum(x * y for x, y in zip(a, b))
+    from soccer_agent.embeddings import cosine_similarity, embed
 
     goal = embed("Messi scored a goal")
     similar = embed("Messi found the net")
     unrelated = embed("The stadium roof needs repairs")
 
-    assert cosine(goal, similar) > cosine(goal, unrelated)
+    assert cosine_similarity(goal, similar) > cosine_similarity(goal, unrelated)

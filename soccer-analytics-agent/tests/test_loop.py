@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 from google.genai import errors, types
-from soccer_agent.loop import SYSTEM_PROMPT, run_turn
+from soccer_agent.loop import CHALLENGE_REASK, SYSTEM_PROMPT, run_turn
 
 
 class FakeModels:
@@ -32,6 +32,14 @@ class FakeModels:
 def _response(parts):
     content = types.Content(role="model", parts=parts)
     return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+
+
+def _model_call_text(fake, call_index: int) -> str:
+    return "".join(
+        getattr(part, "text", "") or ""
+        for content in fake.models.calls[call_index]
+        for part in content.parts
+    )
 
 
 class RateLimitedModels:
@@ -221,10 +229,7 @@ def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
     )
 
     # The nudge appears in the second model call's history (last user part).
-    second_call_texts = ""
-    for content in fake.models.calls[1]:
-        for part in content.parts:
-            second_call_texts += getattr(part, "text", "") or ""
+    second_call_texts = _model_call_text(fake, 1)
     assert "call a tool" in second_call_texts
     # Tool was actually dispatched after the nudge.
     assert calls and calls[0][0] == "sql_query"
@@ -295,10 +300,7 @@ def test_run_turn_error_retry_after_bad_query(monkeypatch):
     )
 
     # The error-retry nudge appears in the third model call's history.
-    third_call_texts = ""
-    for content in fake.models.calls[2]:
-        for part in content.parts:
-            third_call_texts += getattr(part, "text", "") or ""
+    third_call_texts = _model_call_text(fake, 2)
     assert "failed with an error" in third_call_texts
     # Two tool rounds dispatched: the bad query and the fixed query.
     assert len(fetch_calls) == 2
@@ -394,11 +396,8 @@ def test_run_turn_challenge_nudge_forces_reverification(monkeypatch):
     answer, history, steps = run_turn(fake, history, "como?", model="test")
 
     # The challenge nudge appears in the second model call's history.
-    second_call_texts = ""
-    for content in fake.models.calls[1]:
-        for part in content.parts:
-            second_call_texts += getattr(part, "text", "") or ""
-    assert "questioning your previous answer" in second_call_texts
+    second_call_texts = _model_call_text(fake, 1)
+    assert CHALLENGE_REASK in second_call_texts
     # Tool was dispatched to re-verify after the nudge.
     assert calls and calls[0][0] == "sql_query"
     # Final answer keeps the grounded fact instead of retracting.
@@ -416,21 +415,24 @@ def test_run_turn_challenge_nudge_never_fires_for_chit_chat():
     assert len(fake.models.calls) == 1  # no extra nudge round
 
 
+@pytest.mark.integration
 def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
     """A challenge paraphrase NOT in the lexical hints still fires the nudge.
 
     The MiniLM semantic layer must catch phrases like "no te creo" (cosine
     0.845 vs challenge exemplars) that the hardcoded hint list misses.
     """
-    from soccer_agent.loop import _CHALLENGE_HINTS, _challenge_exemplar_vectors
+    from soccer_agent.loop import _CHALLENGE_HINTS
 
     # Precondition: this phrase is NOT covered by the lexical layer, so the
     # nudge can only have fired through the semantic layer.
-    assert "no te creo" not in _CHALLENGE_HINTS
+    assert not any(h in "no te creo" for h in _CHALLENGE_HINTS)
 
     # Skip cleanly when the local embedding model is unavailable (offline).
     try:
-        _challenge_exemplar_vectors()
+        from soccer_agent.embeddings import embed
+
+        embed("ping")
     except Exception as exc:  # pragma: no cover - environment dependent
         pytest.skip(f"MiniLM unavailable for semantic test: {exc}")
 
@@ -465,12 +467,43 @@ def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
     answer, history, steps = run_turn(fake, history, "no te creo", model="test")
 
     # The challenge nudge appears in the second model call's history.
-    second_call_texts = ""
-    for content in fake.models.calls[1]:
-        for part in content.parts:
-            second_call_texts += getattr(part, "text", "") or ""
-    assert "questioning your previous answer" in second_call_texts
+    second_call_texts = _model_call_text(fake, 1)
+    assert CHALLENGE_REASK in second_call_texts
     # Tool was dispatched to re-verify after the nudge.
     assert calls and calls[0][0] == "sql_query"
     # Final answer keeps the grounded fact instead of retracting.
     assert "España" in answer and "1-0" in answer
+
+
+def test_challenge_exemplar_vectors_cached(monkeypatch):
+    from soccer_agent.loop import _challenge_exemplar_vectors, _semantic_is_challenge
+
+    _challenge_exemplar_vectors.cache_clear()
+    batch_calls = 0
+    dummy = [1.0, 0.0, 0.0]
+
+    def fake_embed_batch(texts):
+        nonlocal batch_calls
+        batch_calls += 1
+        return [dummy] * len(texts)
+
+    monkeypatch.setattr("soccer_agent.embeddings.embed_batch", fake_embed_batch)
+    monkeypatch.setattr("soccer_agent.embeddings.embed", lambda text: dummy)
+
+    try:
+        _semantic_is_challenge("first")
+        _semantic_is_challenge("second")
+        assert batch_calls == 1
+    finally:
+        _challenge_exemplar_vectors.cache_clear()
+
+
+def test_is_challenge_lexical_gate_skips_semantic(monkeypatch):
+    from soccer_agent.loop import _is_challenge
+
+    def fail_semantic(_message):
+        raise AssertionError("semantic layer must not run for lexical match")
+
+    monkeypatch.setattr("soccer_agent.loop._semantic_is_challenge", fail_semantic)
+
+    assert _is_challenge("como?") is True
