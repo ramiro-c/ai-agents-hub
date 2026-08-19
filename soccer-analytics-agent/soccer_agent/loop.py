@@ -59,7 +59,12 @@ SYSTEM_PROMPT = (
     "before answering. If tools return no rows, missing scores (NULL), or "
     "incomplete data, state exactly what the database shows and explicitly say "
     "what is missing instead of guessing. A fact not backed by a tool result is "
-    "not a fact in this conversation."
+    "not a fact in this conversation. "
+    "If the user challenges, doubts, or seems surprised by an answer you gave "
+    "from tool results (e.g. '¿cómo?', 'estás seguro?', 'are you sure?'), "
+    "DO NOT retract it based on your training knowledge — the database is "
+    "authoritative for match facts. Re-verify with a tool call and show the "
+    "evidence the database returns."
 )
 
 
@@ -128,6 +133,52 @@ GROUNDING_REASK = (
     "answering this question. Query the database for match facts. If the tools "
     "cannot answer definitively, state exactly what data is missing."
 )
+
+# Follow-up challenge enforcement. The grounding nudge above only fires when
+# the user message itself contains fact vocabulary ("match", "team", ...), but
+# the most dangerous retraction happens AFTER a grounded answer: the user
+# challenges it ("¿cómo?", "estás seguro?", "are you sure?") and the model
+# folds to its parametric prior, contradicting the tool result it just saw.
+# When the model answers such a challenge with plain text and no tool call,
+# inject exactly ONE re-verification re-ask, then accept whatever comes next.
+_CHALLENGE_HINTS = (
+    "como?",
+    "cómo?",
+    "¿cómo?",
+    "¿como?",
+    "como es posible",
+    "cómo es posible",
+    "estás seguro",
+    "estas seguro",
+    "are you sure",
+    "really?",
+    "en serio?",
+    "no puede ser",
+    "no es posible",
+    "no es cierto",
+    "no creo",
+    "no me digas",
+    "imposible",
+    "impossible",
+    "that can't",
+    "eso no",
+    "no es así",
+    "wrong",
+    "incorrect",
+    "mentira",
+)
+CHALLENGE_REASK = (
+    "[SYSTEM] The user is questioning your previous answer. If that answer was "
+    "backed by tool results, do NOT retract it based on your training "
+    "knowledge — the database is authoritative for match facts. Re-run a tool "
+    "call to re-verify, then answer with the evidence the database shows."
+)
+
+
+def _is_challenge(message: str) -> bool:
+    """True when a user message signals doubt about a previous answer."""
+    lowered = message.lower()
+    return any(hint in lowered for hint in _CHALLENGE_HINTS)
 
 
 def _needs_grounding(query: str) -> bool:
@@ -217,6 +268,7 @@ def run_turn_events(
     history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
     step = 0
     grounding_nudge_used = False
+    challenge_nudge_used = False
     any_tool_calls_this_turn = False
     error_retry_used = False
     last_tool_error = False
@@ -272,6 +324,19 @@ def run_turn_events(
                 grounding_nudge_used = True
                 history.append(
                     types.Content(role="user", parts=[types.Part(text=GROUNDING_REASK)])
+                )
+                continue
+            if (
+                not challenge_nudge_used
+                and not any_tool_calls_this_turn
+                and _is_challenge(user_message)
+            ):
+                # Bounded challenge enforcement: the user doubts a previous
+                # answer and the model folds to memory without re-verifying.
+                # Inject ONE re-ask that forces a tool round, then continue.
+                challenge_nudge_used = True
+                history.append(
+                    types.Content(role="user", parts=[types.Part(text=CHALLENGE_REASK)])
                 )
                 continue
             if (

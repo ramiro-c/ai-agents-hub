@@ -179,6 +179,9 @@ def test_system_prompt_enforces_tool_grounding():
     assert "ALWAYS call a" in SYSTEM_PROMPT
     assert "NULL" in SYSTEM_PROMPT
     assert "not a fact in this conversation" in SYSTEM_PROMPT
+    # A challenged, tool-backed answer must never be retracted from memory.
+    assert "DO NOT retract it based on your training knowledge" in SYSTEM_PROMPT
+    assert "Re-verify with a tool call" in SYSTEM_PROMPT
 
 
 def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
@@ -304,3 +307,109 @@ def test_run_turn_error_retry_after_bad_query(monkeypatch):
     assert "Spain" in answer and "1-0" in answer
     # user, bad call, error result, text answer, nudge, good call, result, answer
     assert len(history) == 8
+
+
+def _grounded_history():
+    """History where a previous turn answered with tool-backed evidence."""
+    return [
+        types.Content(
+            role="user",
+            parts=[types.Part(text="quien gano el mundial 2026?")],
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_function_call(
+                    name="sql_query",
+                    args={
+                        "sql": (
+                            "SELECT match_date, home_team, away_team, home_score, "
+                            "away_score FROM matches WHERE tournament = 'FIFA World "
+                            "Cup' AND EXTRACT(YEAR FROM match_date) = 2026 "
+                            "ORDER BY match_date DESC LIMIT 1"
+                        )
+                    },
+                )
+            ],
+        ),
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="sql_query",
+                    response={
+                        "result": {"rows": [["2026-07-19", "Spain", "Argentina", 1, 0]]}
+                    },
+                )
+            ],
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    text="Según la base de datos, España venció a Argentina 1-0 "
+                    "en la final del 19 de julio de 2026."
+                )
+            ],
+        ),
+    ]
+
+
+def test_run_turn_challenge_nudge_forces_reverification(monkeypatch):
+    """A challenged grounded answer ('¿cómo?') must re-verify, not retract."""
+    calls = []
+    monkeypatch.setattr(
+        "soccer_agent.loop.dispatch",
+        lambda name, args: (
+            calls.append((name, args))
+            or {"rows": [["2026-07-19", "Spain", "Argentina", 1, 0]]}
+        ),
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                # 1) challenge "¿cómo?" answered from memory WITHOUT a tool call
+                _response(
+                    [types.Part(text="El Mundial de 2026 no se ha jugado todavía...")]
+                ),
+                # 2) after the challenge nudge: re-runs the verification query
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": "SELECT * FROM matches"},
+                        )
+                    ]
+                ),
+                # 3) grounded answer, evidence from the tool result
+                _response(
+                    [types.Part(text="España venció a Argentina 1-0 el 19 de julio.")]
+                ),
+            ]
+        )
+    )
+
+    history = _grounded_history()
+    answer, history, steps = run_turn(fake, history, "como?", model="test")
+
+    # The challenge nudge appears in the second model call's history.
+    second_call_texts = ""
+    for content in fake.models.calls[1]:
+        for part in content.parts:
+            second_call_texts += getattr(part, "text", "") or ""
+    assert "questioning your previous answer" in second_call_texts
+    # Tool was dispatched to re-verify after the nudge.
+    assert calls and calls[0][0] == "sql_query"
+    # Final answer keeps the grounded fact instead of retracting.
+    assert "España" in answer and "1-0" in answer
+    # History grew: prior 4 + user msg, retraction, nudge, tool call, result, answer
+    assert len(history) == 10
+
+
+def test_run_turn_challenge_nudge_never_fires_for_chit_chat():
+    """A plain non-challenge follow-up must not force a tool round."""
+    fake = SimpleNamespace(models=FakeModels([_response([types.Part(text="Bien!")])]))
+    answer, history, steps = run_turn(fake, [], "¿cómo estás?", model="test")
+    assert answer == "Bien!"
+    assert len(history) == 2
+    assert len(fake.models.calls) == 1  # no extra nudge round
