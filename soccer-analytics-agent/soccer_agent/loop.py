@@ -232,6 +232,11 @@ def _is_challenge(message: str) -> bool:
     return _semantic_is_challenge(message)
 
 
+def _has_prior_model_turn(history: list) -> bool:
+    """True when incoming history already contains a model answer to challenge."""
+    return any(getattr(content, "role", None) == "model" for content in history)
+
+
 def _needs_grounding(query: str) -> bool:
     """True when a user question plausibly asks for database-backed match facts."""
     lowered = query.lower()
@@ -316,6 +321,7 @@ def run_turn_events(
     below can reconstruct run_turn's original contract.
     """
     history = list(history)
+    prior_model_turn = _has_prior_model_turn(history)
     history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
     step = 0
     grounding_nudge_used = False
@@ -380,6 +386,7 @@ def run_turn_events(
             if (
                 not challenge_nudge_used
                 and not any_tool_calls_this_turn
+                and prior_model_turn
                 and _is_challenge(user_message)
             ):
                 # Bounded challenge enforcement: the user doubts a previous

@@ -415,6 +415,35 @@ def test_run_turn_challenge_nudge_never_fires_for_chit_chat():
     assert len(fake.models.calls) == 1  # no extra nudge round
 
 
+def test_run_turn_challenge_nudge_skipped_without_prior_answer():
+    """A first-turn lexical challenge must not inject CHALLENGE_REASK."""
+    fake = SimpleNamespace(models=FakeModels([_response([types.Part(text="Ok")])]))
+    answer, history, steps = run_turn(fake, [], "como?", model="test")
+    assert answer == "Ok"
+    assert len(fake.models.calls) == 1
+    assert CHALLENGE_REASK not in _model_call_text(fake, 0)
+
+
+def test_run_turn_challenge_nudge_fires_after_text_only_prior_answer():
+    """Working memory is text-only; a prior model turn is enough to challenge."""
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response([types.Part(text="No se ha jugado.")]),
+                _response([types.Part(text="España 1-0 Argentina.")]),
+            ]
+        )
+    )
+    prior = [
+        types.Content(role="user", parts=[types.Part(text="hola")]),
+        types.Content(role="model", parts=[types.Part(text="hola!")]),
+    ]
+    answer, history, steps = run_turn(fake, prior, "como?", model="test")
+    assert CHALLENGE_REASK in _model_call_text(fake, 1)
+    assert len(fake.models.calls) == 2
+    assert "España" in answer
+
+
 @pytest.mark.integration
 def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
     """A challenge paraphrase NOT in the lexical hints still fires the nudge.
