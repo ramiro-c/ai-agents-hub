@@ -297,7 +297,13 @@ def _generate_stream(client, *, model, history, config):
 
 
 def run_turn_events(
-    client, history: list, user_message: str, model: str, trace_ctx: dict | None = None
+    client,
+    history: list,
+    user_message: str,
+    model: str,
+    trace_ctx: dict | None = None,
+    *,
+    classify_as: str | None = None,
 ):
     """Run one turn as a stream of events, dispatching tool calls until answered.
 
@@ -322,6 +328,7 @@ def run_turn_events(
     """
     history = list(history)
     prior_model_turn = _has_prior_model_turn(history)
+    classifier_text = user_message if classify_as is None else classify_as
     history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
     step = 0
     grounding_nudge_used = False
@@ -373,7 +380,7 @@ def run_turn_events(
             if (
                 not grounding_nudge_used
                 and not any_tool_calls_this_turn
-                and _needs_grounding(user_message)
+                and _needs_grounding(classifier_text)
             ):
                 # Bounded grounding enforcement: the model tried to answer a
                 # factual question without calling any tool. Inject ONE re-ask
@@ -387,7 +394,7 @@ def run_turn_events(
                 not challenge_nudge_used
                 and not any_tool_calls_this_turn
                 and prior_model_turn
-                and _is_challenge(user_message)
+                and _is_challenge(classifier_text)
             ):
                 # Bounded challenge enforcement: the user doubts a previous
                 # answer and the model folds to memory without re-verifying.
@@ -400,7 +407,7 @@ def run_turn_events(
             if (
                 not error_retry_used
                 and last_tool_error
-                and _needs_grounding(user_message)
+                and _needs_grounding(classifier_text)
             ):
                 # Bounded error-driven retry: the last tool round errored and the
                 # model still tried to answer from memory. Inject ONE retry that
@@ -470,7 +477,13 @@ def run_turn_events(
 
 
 def run_turn(
-    client, history: list, user_message: str, model: str, trace_ctx: dict | None = None
+    client,
+    history: list,
+    user_message: str,
+    model: str,
+    trace_ctx: dict | None = None,
+    *,
+    classify_as: str | None = None,
 ) -> tuple[str, list, int]:
     """Run one conversational turn, dispatching tool calls until the model answers.
 
@@ -483,7 +496,9 @@ def run_turn(
     answer = ""
     final_history = list(history)
     step = 0
-    gen = run_turn_events(client, history, user_message, model, trace_ctx)
+    gen = run_turn_events(
+        client, history, user_message, model, trace_ctx, classify_as=classify_as
+    )
     try:
         while True:
             event = next(gen)

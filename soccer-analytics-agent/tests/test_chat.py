@@ -82,3 +82,63 @@ def test_respond_injects_episodic_grounding_and_persists(monkeypatch):
     # tracing was wired — at least one step saved (the model answer)
     assert len(saved["trace"]) >= 1
     assert saved["trace"][0][2]["kind"] == "answer"
+
+
+def test_respond_passes_raw_utterance_as_classify_as(monkeypatch):
+    captured = {}
+
+    def fake_run_turn(
+        client, history, user_message, model, trace_ctx=None, classify_as=None
+    ):
+        captured["user_message"] = user_message
+        captured["classify_as"] = classify_as
+        return "ok", history, 1
+
+    monkeypatch.setattr(chat, "run_turn", fake_run_turn)
+    monkeypatch.setattr(chat.memory, "load_working", lambda s, limit=10: [])
+    monkeypatch.setattr(
+        chat.memory,
+        "recall_episodes",
+        lambda s, q, k=3: [
+            {
+                "user_message": "Who is Messi?",
+                "agent_response": "An Argentine forward.",
+                "score": 0.9,
+            }
+        ],
+    )
+    monkeypatch.setattr(chat.memory, "append_working", lambda s, r, c: None)
+    monkeypatch.setattr(chat.memory, "save_episode", lambda s, u, a: None)
+    monkeypatch.setattr(chat.trace, "get_last_turn_id", lambda s: 0)
+
+    fake = SimpleNamespace(models=FakeModels("unused"))
+    chat.respond(fake, "sess-1", "Where does he play now?", model="test")
+
+    assert captured["classify_as"] == "Where does he play now?"
+    assert "Messi" in captured["user_message"]
+    assert "Where does he play now?" in captured["user_message"]
+
+
+def test_respond_stream_passes_raw_utterance_as_classify_as(monkeypatch):
+    captured = {}
+
+    def fake_run_turn_events(
+        client, history, user_message, model, trace_ctx=None, classify_as=None
+    ):
+        captured["user_message"] = user_message
+        captured["classify_as"] = classify_as
+        yield {"type": "done", "answer": "ok"}
+
+    monkeypatch.setattr(chat, "run_turn_events", fake_run_turn_events)
+    monkeypatch.setattr(chat.memory, "load_working", lambda s, limit=10: [])
+    monkeypatch.setattr(chat.memory, "recall_episodes", lambda s, q, k=3: [])
+    monkeypatch.setattr(chat.memory, "append_working", lambda s, r, c: None)
+    monkeypatch.setattr(chat.memory, "save_episode", lambda s, u, a: None)
+    monkeypatch.setattr(chat.trace, "get_last_turn_id", lambda s: 0)
+
+    fake = SimpleNamespace(models=FakeModels("unused"))
+    events = list(chat.respond_stream(fake, "sess-1", "hola", model="test"))
+
+    assert captured["classify_as"] == "hola"
+    assert captured["user_message"] == "hola"  # no episodes → not augmented
+    assert events[-1]["type"] == "done"

@@ -444,6 +444,32 @@ def test_run_turn_challenge_nudge_fires_after_text_only_prior_answer():
     assert "España" in answer
 
 
+def test_run_turn_challenge_uses_classify_as_not_user_message():
+    """Lexical hints in episodic context must not trigger the challenge nudge."""
+    fake = SimpleNamespace(
+        models=FakeModels([_response([types.Part(text="He plays for Inter Miami.")])])
+    )
+    prior = [
+        types.Content(role="user", parts=[types.Part(text="hola")]),
+        types.Content(role="model", parts=[types.Part(text="hola!")]),
+    ]
+    augmented = (
+        "Relevant context from earlier in this session:\n"
+        "- Earlier you asked: 'who won?' -> 'that is wrong, Spain won'\n\n"
+        "Current question: Where does Messi play now?"
+    )
+    answer, history, steps = run_turn(
+        fake,
+        prior,
+        augmented,
+        model="test",
+        classify_as="Where does Messi play now?",
+    )
+    assert answer == "He plays for Inter Miami."
+    assert len(fake.models.calls) == 1
+    assert CHALLENGE_REASK not in _model_call_text(fake, 0)
+
+
 @pytest.mark.integration
 def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
     """A challenge paraphrase NOT in the lexical hints still fires the nudge.

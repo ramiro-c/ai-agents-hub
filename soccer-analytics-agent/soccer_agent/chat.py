@@ -41,7 +41,14 @@ def respond(client, session_id: str, user_message: str, model: str) -> tuple[str
     turn_id = trace.get_last_turn_id(session_id) + 1
     trace_ctx = {"session_id": session_id, "turn_id": turn_id}
 
-    answer, _, _ = run_turn(client, prior, augmented, model=model, trace_ctx=trace_ctx)
+    answer, _, _ = run_turn(
+        client,
+        prior,
+        augmented,
+        model=model,
+        trace_ctx=trace_ctx,
+        classify_as=user_message,
+    )
 
     memory.append_working(session_id, "user", user_message)  # store raw, not augmented
     memory.append_working(session_id, "model", answer)
@@ -64,7 +71,14 @@ def respond_stream(client, session_id: str, user_message: str, model: str):
     turn_id = trace.get_last_turn_id(session_id) + 1
     trace_ctx = {"session_id": session_id, "turn_id": turn_id}
 
-    gen = run_turn_events(client, prior, augmented, model=model, trace_ctx=trace_ctx)
+    gen = run_turn_events(
+        client,
+        prior,
+        augmented,
+        model=model,
+        trace_ctx=trace_ctx,
+        classify_as=user_message,
+    )
     try:
         while True:
             event = next(gen)
