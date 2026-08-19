@@ -174,11 +174,66 @@ CHALLENGE_REASK = (
     "call to re-verify, then answer with the evidence the database shows."
 )
 
+# Semantic layer for challenge detection: MiniLM embeddings of curated
+# challenge exemplars, compared by cosine against the current user message.
+# Layer 1 (lexical hints) is zero-latency and precise; layer 2 catches
+# paraphrases the list cannot enumerate. Threshold 0.80 was tuned empirically:
+# true positives ("no te creo" 0.845, "estás de joda" 0.813) vs worst observed
+# false positive ("¿cómo estás?" 0.679). If embeddings are unavailable this
+# layer degrades to False and the lexical layer still works.
+_CHALLENGE_EXEMPLARS = (
+    "¿es un chiste?",
+    "estás jodiendo",
+    "no me la creo",
+    "eso no tiene sentido",
+    "eso no me cuadra",
+    "te equivocás",
+    "no es verdad",
+    "no jodas",
+    "are you serious?",
+    "you must be joking",
+    "that's ridiculous",
+    "no way",
+    "this can't be true",
+)
+CHALLENGE_SIMILARITY_THRESHOLD = 0.80
+
+
+def _challenge_exemplar_vectors():
+    """Embedded exemplars, computed once per process."""
+    from soccer_agent.embeddings import embed
+
+    return tuple(embed(ex) for ex in _CHALLENGE_EXEMPLARS)
+
+
+def _semantic_is_challenge(message: str) -> bool:
+    """True when the message is semantically close to a challenge exemplar."""
+    try:
+        from soccer_agent.embeddings import embed
+
+        vector = embed(message)
+        return (
+            max(
+                sum(a * b for a, b in zip(vector, exemplar))
+                for exemplar in _challenge_exemplar_vectors()
+            )
+            >= CHALLENGE_SIMILARITY_THRESHOLD
+        )
+    except Exception:
+        return False
+
 
 def _is_challenge(message: str) -> bool:
-    """True when a user message signals doubt about a previous answer."""
+    """True when a user message signals doubt about a previous answer.
+
+    Two layers: exact lexical hints first (zero-latency, precise), then a
+    MiniLM semantic check against curated challenge exemplars (recall for
+    paraphrases the list cannot enumerate).
+    """
     lowered = message.lower()
-    return any(hint in lowered for hint in _CHALLENGE_HINTS)
+    if any(hint in lowered for hint in _CHALLENGE_HINTS):
+        return True
+    return _semantic_is_challenge(message)
 
 
 def _needs_grounding(query: str) -> bool:

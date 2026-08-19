@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 from google.genai import errors, types
 from soccer_agent.loop import SYSTEM_PROMPT, run_turn
 
@@ -413,3 +414,63 @@ def test_run_turn_challenge_nudge_never_fires_for_chit_chat():
     assert answer == "Bien!"
     assert len(history) == 2
     assert len(fake.models.calls) == 1  # no extra nudge round
+
+
+def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
+    """A challenge paraphrase NOT in the lexical hints still fires the nudge.
+
+    The MiniLM semantic layer must catch phrases like "no te creo" (cosine
+    0.845 vs challenge exemplars) that the hardcoded hint list misses.
+    """
+    from soccer_agent.loop import _CHALLENGE_HINTS, _challenge_exemplar_vectors
+
+    # Precondition: this phrase is NOT covered by the lexical layer, so the
+    # nudge can only have fired through the semantic layer.
+    assert "no te creo" not in _CHALLENGE_HINTS
+
+    # Skip cleanly when the local embedding model is unavailable (offline).
+    try:
+        _challenge_exemplar_vectors()
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"MiniLM unavailable for semantic test: {exc}")
+
+    calls = []
+    monkeypatch.setattr(
+        "soccer_agent.loop.dispatch",
+        lambda name, args: (
+            calls.append((name, args))
+            or {"rows": [["2026-07-19", "Spain", "Argentina", 1, 0]]}
+        ),
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response([types.Part(text="No te creo, eso es de tu memoria.")]),
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": "SELECT * FROM matches"},
+                        )
+                    ]
+                ),
+                _response(
+                    [types.Part(text="España venció a Argentina 1-0 el 19 de julio.")]
+                ),
+            ]
+        )
+    )
+
+    history = _grounded_history()
+    answer, history, steps = run_turn(fake, history, "no te creo", model="test")
+
+    # The challenge nudge appears in the second model call's history.
+    second_call_texts = ""
+    for content in fake.models.calls[1]:
+        for part in content.parts:
+            second_call_texts += getattr(part, "text", "") or ""
+    assert "questioning your previous answer" in second_call_texts
+    # Tool was dispatched to re-verify after the nudge.
+    assert calls and calls[0][0] == "sql_query"
+    # Final answer keeps the grounded fact instead of retracting.
+    assert "España" in answer and "1-0" in answer
