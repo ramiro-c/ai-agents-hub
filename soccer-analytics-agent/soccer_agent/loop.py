@@ -220,7 +220,7 @@ def _semantic_is_challenge(message: str) -> bool:
             )
             >= CHALLENGE_SIMILARITY_THRESHOLD
         )
-    except (ImportError, OSError, RuntimeError):
+    except (ImportError, OSError, RuntimeError, ValueError):
         return False
 
 

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 from google.genai import errors, types
-from soccer_agent.loop import CHALLENGE_REASK, SYSTEM_PROMPT, run_turn
+from soccer_agent.loop import CHALLENGE_REASK, GROUNDING_REASK, SYSTEM_PROMPT, run_turn
 
 
 class FakeModels:
@@ -444,6 +444,26 @@ def test_run_turn_challenge_nudge_fires_after_text_only_prior_answer():
     assert "España" in answer
 
 
+def test_run_turn_grounding_uses_classify_as_not_user_message():
+    """Match vocabulary in episodic context must not trigger the grounding nudge."""
+    fake = SimpleNamespace(models=FakeModels([_response([types.Part(text="Hola!")])]))
+    augmented = (
+        "Relevant context from earlier in this session:\n"
+        "- Earlier you asked: 'who won the 2026 World Cup match?' -> 'Spain won'\n\n"
+        "Current question: hola"
+    )
+    answer, history, steps = run_turn(
+        fake,
+        [],
+        augmented,
+        model="test",
+        classify_as="hola",
+    )
+    assert answer == "Hola!"
+    assert len(fake.models.calls) == 1
+    assert GROUNDING_REASK not in _model_call_text(fake, 0)
+
+
 def test_run_turn_challenge_uses_classify_as_not_user_message():
     """Lexical hints in episodic context must not trigger the challenge nudge."""
     fake = SimpleNamespace(
@@ -528,6 +548,25 @@ def test_run_turn_semantic_challenge_nudge_forces_reverification(monkeypatch):
     assert calls and calls[0][0] == "sql_query"
     # Final answer keeps the grounded fact instead of retracting.
     assert "España" in answer and "1-0" in answer
+
+
+def test_semantic_is_challenge_degrades_on_vector_mismatch(monkeypatch):
+    from soccer_agent.loop import _challenge_exemplar_vectors, _semantic_is_challenge
+
+    _challenge_exemplar_vectors.cache_clear()
+    short_dummy = [1.0, 0.0, 0.0]
+    long_dummy = [1.0, 0.0, 0.0, 0.0]
+
+    def fake_embed_batch(texts):
+        return [short_dummy] * len(texts)
+
+    monkeypatch.setattr("soccer_agent.embeddings.embed_batch", fake_embed_batch)
+    monkeypatch.setattr("soccer_agent.embeddings.embed", lambda text: long_dummy)
+
+    try:
+        assert _semantic_is_challenge("hello") is False
+    finally:
+        _challenge_exemplar_vectors.cache_clear()
 
 
 def test_challenge_exemplar_vectors_cached(monkeypatch):
