@@ -371,6 +371,14 @@ def test_is_coverage_overclaim_honest_ignorance_is_false():
     assert (
         _is_coverage_overclaim("I don't have that information in this dataset") is False
     )
+    # Would match overclaim if _COVERAGE_IGNORANCE_PHRASES guard were absent.
+    assert (
+        _is_coverage_overclaim(
+            "The tournament would not have concluded; "
+            "that match is not in this dataset."
+        )
+        is False
+    )
 
 
 def test_is_coverage_overclaim_detects_non_occurrence_phrases():
