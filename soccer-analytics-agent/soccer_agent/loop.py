@@ -85,6 +85,46 @@ TRUNCATION_REASK = (
     "answer from that result."
 )
 
+COVERAGE_REASK = (
+    "[SYSTEM] Do not infer that an event did not happen from missing, empty, "
+    "truncated, or incomplete tool results. Say this dataset does not contain "
+    "the answer — it may exist outside this database. Do not invent why "
+    "(no dates, no recency, no 'last update'). Offer a concrete next step "
+    "(a more specific query, a different tool, or checking with a human). "
+    "Do not argue."
+)
+
+# Lexical phrases that claim an event never occurred — used to catch post-tool
+# overclaims ("the tournament would not have concluded") after incomplete samples.
+_COVERAGE_OVERCLAIM_PHRASES = (
+    "has not been played",
+    "haven't been played",
+    "hasn't been played",
+    "would not have concluded",
+    "wouldn't have concluded",
+    "has not taken place",
+    "hasn't taken place",
+    "hasn't happened",
+    "last data update",
+    "no se ha jugado",
+    "no habría concluido",
+)
+_COVERAGE_IGNORANCE_PHRASES = (
+    "not in this dataset",
+    "not in the dataset",
+    "no está en este dataset",
+    "no está en la base de datos",
+)
+
+
+def _is_coverage_overclaim(text: str) -> bool:
+    """True when text claims an event did not occur (not honest dataset ignorance)."""
+    lowered = text.lower()
+    if any(phrase in lowered for phrase in _COVERAGE_IGNORANCE_PHRASES):
+        return False
+    return any(phrase in lowered for phrase in _COVERAGE_OVERCLAIM_PHRASES)
+
+
 # Grounding enforcement. Prompt instructions alone are not enough: Gemini's
 # parametric prior can outweigh them (e.g. "the 2026 World Cup has not been
 # played yet"). If the model tries to answer a factual match question on the
@@ -349,6 +389,7 @@ def run_turn_events(
     any_tool_calls_this_turn = False
     error_retry_used = False
     truncation_nudge_used = False
+    coverage_nudge_used = False
     last_tool_error = False
     last_tool_truncated = False
 
@@ -443,6 +484,19 @@ def run_turn_events(
                     types.Content(
                         role="user", parts=[types.Part(text=TRUNCATION_REASK)]
                     )
+                )
+                continue
+            if (
+                not coverage_nudge_used
+                and any_tool_calls_this_turn
+                and _is_coverage_overclaim(full_text)
+            ):
+                # Bounded coverage-overclaim enforcement: after tools ran, the
+                # model claimed an event never happened from incomplete results.
+                # Inject ONE re-ask, then continue the loop.
+                coverage_nudge_used = True
+                history.append(
+                    types.Content(role="user", parts=[types.Part(text=COVERAGE_REASK)])
                 )
                 continue
             if trace_ctx:

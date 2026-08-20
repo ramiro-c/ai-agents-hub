@@ -4,9 +4,11 @@ import pytest
 from google.genai import errors, types
 from soccer_agent.loop import (
     CHALLENGE_REASK,
+    COVERAGE_REASK,
     GROUNDING_REASK,
     SYSTEM_PROMPT,
     TRUNCATION_REASK,
+    _is_coverage_overclaim,
     run_turn,
 )
 
@@ -362,6 +364,73 @@ def test_run_turn_truncation_nudge_never_fires_without_truncated_flag(monkeypatc
     assert len(fake.models.calls) == 2
     assert TRUNCATION_REASK not in _model_call_text(fake, 1)
     assert len(history) == 4
+
+
+def test_is_coverage_overclaim_honest_ignorance_is_false():
+    """Honest 'not in this dataset' copy must not trip the overclaim detector."""
+    assert (
+        _is_coverage_overclaim("I don't have that information in this dataset") is False
+    )
+
+
+def test_is_coverage_overclaim_detects_non_occurrence_phrases():
+    """Lexical non-occurrence phrases must trip the overclaim detector."""
+    assert _is_coverage_overclaim("the tournament would not have concluded") is True
+    assert _is_coverage_overclaim("That tournament has not taken place yet.") is True
+
+
+def test_run_turn_coverage_overclaim_nudge_after_tools(monkeypatch):
+    """A post-tool overclaim triggers ONE coverage re-ask and an honest follow-up."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        return {
+            "rows": [
+                ["Brazil", "Serbia", 2, 0],
+                ["Germany", "Japan", 1, 2],
+                ["Spain", "Costa Rica", 7, 0],
+            ],
+        }
+
+    group_sql = (
+        "SELECT home_team, away_team, home_score, away_score "
+        "FROM matches WHERE tournament = 'FIFA World Cup' "
+        "AND match_date < DATE '2022-12-18'"
+    )
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    overclaim = "the tournament would not have concluded"
+    honest_answer = (
+        "I don't have that information in this dataset. "
+        "Try a more specific query for the final match, or check with a human."
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": group_sql},
+                        )
+                    ]
+                ),
+                _response([types.Part(text=overclaim)]),
+                _response([types.Part(text=honest_answer)]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "who won the 2026 World Cup?", model="test"
+    )
+
+    third_call_texts = _model_call_text(fake, 2)
+    assert COVERAGE_REASK in third_call_texts
+    assert len(fetch_calls) == 1
+    assert "in this dataset" in answer.lower()
+    assert "would not have concluded" not in answer.lower()
+    assert len(history) == 6
 
 
 def test_run_turn_error_retry_after_bad_query(monkeypatch):
