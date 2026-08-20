@@ -75,6 +75,13 @@ ERROR_RETRY_REASK = (
     "state exactly what data is missing."
 )
 
+TRUNCATION_REASK = (
+    "[SYSTEM] The last query hit the 50-row cap, so this sample is not the full "
+    "result. Do not conclude coverage from it. Re-query more specifically — for a "
+    "tournament winner: ORDER BY match_date DESC LIMIT 1 (or a Final filter). Then "
+    "answer from that result."
+)
+
 # Grounding enforcement. Prompt instructions alone are not enough: Gemini's
 # parametric prior can outweigh them (e.g. "the 2026 World Cup has not been
 # played yet"). If the model tries to answer a factual match question on the
@@ -335,7 +342,9 @@ def run_turn_events(
     challenge_nudge_used = False
     any_tool_calls_this_turn = False
     error_retry_used = False
+    truncation_nudge_used = False
     last_tool_error = False
+    last_tool_truncated = False
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
@@ -419,6 +428,17 @@ def run_turn_events(
                     )
                 )
                 continue
+            if not truncation_nudge_used and last_tool_truncated:
+                # Bounded truncation enforcement: the last tool round returned a
+                # capped sample and the model tried to answer from it. Inject ONE
+                # re-ask that forces a more specific query, then continue the loop.
+                truncation_nudge_used = True
+                history.append(
+                    types.Content(
+                        role="user", parts=[types.Part(text=TRUNCATION_REASK)]
+                    )
+                )
+                continue
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],
@@ -460,6 +480,10 @@ def run_turn_events(
         yield {"type": "tool_call", "calls": tool_info}
         last_tool_error = any(
             isinstance(ti["result"], dict) and "error" in ti["result"]
+            for ti in tool_info
+        )
+        last_tool_truncated = any(
+            isinstance(ti["result"], dict) and ti["result"].get("truncated") is True
             for ti in tool_info
         )
         history.append(types.Content(role="user", parts=result_parts))

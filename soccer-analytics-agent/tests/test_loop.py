@@ -2,7 +2,13 @@ from types import SimpleNamespace
 
 import pytest
 from google.genai import errors, types
-from soccer_agent.loop import CHALLENGE_REASK, GROUNDING_REASK, SYSTEM_PROMPT, run_turn
+from soccer_agent.loop import (
+    CHALLENGE_REASK,
+    GROUNDING_REASK,
+    SYSTEM_PROMPT,
+    TRUNCATION_REASK,
+    run_turn,
+)
 
 
 class FakeModels:
@@ -246,6 +252,109 @@ def test_run_turn_grounding_nudge_never_fires_for_chit_chat():
     assert answer == "Hi!"
     assert len(history) == 2
     assert len(fake.models.calls) == 1  # no extra nudge round
+
+
+def test_run_turn_truncation_nudge_forces_refined_query(monkeypatch):
+    """A truncated tool result followed by a text-only answer triggers ONE re-ask."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        if "LIMIT 1" in args.get("sql", ""):
+            return {"rows": [["Spain", "Argentina", 1, 0]]}
+        return {
+            "rows": [["dummy"]] * 50,
+            "truncated": True,
+        }
+
+    broad_sql = (
+        "SELECT home_team, away_team, home_score, away_score "
+        "FROM matches WHERE tournament ILIKE '%World Cup%'"
+    )
+    refined_sql = (
+        "SELECT home_team, away_team, home_score, away_score "
+        "FROM matches WHERE tournament = 'FIFA World Cup' "
+        "ORDER BY match_date DESC LIMIT 1"
+    )
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                # 1) broad query: tool call that returns a truncated sample
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": broad_sql},
+                        )
+                    ]
+                ),
+                # 2) after the truncated result, the model answers from the sample
+                _response(
+                    [types.Part(text="Only preliminary matches are in the sample.")]
+                ),
+                # 3) after the truncation nudge: a more specific tool call
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": refined_sql},
+                        )
+                    ]
+                ),
+                # 4) grounded answer from the refined tool result
+                _response([types.Part(text="Spain beat Argentina 1-0 in the final.")]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "who won the 2026 World Cup?", model="test"
+    )
+
+    third_call_texts = _model_call_text(fake, 2)
+    assert TRUNCATION_REASK in third_call_texts
+    assert len(fetch_calls) == 2
+    assert "LIMIT 1" not in fetch_calls[0][1]["sql"]
+    assert "LIMIT 1" in fetch_calls[1][1]["sql"]
+    assert "Spain" in answer and "1-0" in answer
+    assert len(history) == 8
+
+
+def test_run_turn_truncation_nudge_never_fires_without_truncated_flag(monkeypatch):
+    """A complete tool result must not trigger the truncation re-ask."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        return {"rows": [["Spain", "Argentina", 1, 0]]}
+
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": "SELECT * FROM matches LIMIT 1"},
+                        )
+                    ]
+                ),
+                _response([types.Part(text="Spain beat Argentina 1-0 in the final.")]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "who won the 2026 World Cup?", model="test"
+    )
+
+    assert len(fetch_calls) == 1
+    assert "Spain" in answer
+    assert len(fake.models.calls) == 2
+    assert TRUNCATION_REASK not in _model_call_text(fake, 1)
+    assert len(history) == 4
 
 
 def test_run_turn_error_retry_after_bad_query(monkeypatch):
