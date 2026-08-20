@@ -23,5 +23,10 @@ def test_schema_creates_tables():
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema = 'public'"
         ).fetchall()
+        cols = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'matches'"
+        ).fetchall()
     names = {r[0] for r in rows}
     assert {"matches", "goalscorers", "shootouts"} <= names
+    assert "winner" in {r[0] for r in cols}

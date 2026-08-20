@@ -40,10 +40,14 @@ SYSTEM_PROMPT = (
     "When writing SQL, use PostgreSQL syntax: EXTRACT(YEAR FROM match_date) for "
     "year filtering, ILIKE for case-insensitive text, LIMIT to cap rows, and "
     "proper date literals (DATE '2022-12-18'). "
-    "The matches table has columns home_team, away_team, home_score, away_score "
-    "— there is NO winner column. For 'latest', 'most recent', or winner "
+    "The matches table has columns home_team, away_team, home_score, away_score, "
+    "winner (derived from the score, or from shootouts on a draw). "
+    "For 'latest', 'most recent', or tournament-winner "
     "questions, always ORDER BY match_date DESC before LIMIT so you see the "
-    "newest match, not the oldest. Tournament values are 'FIFA World Cup' "
+    "newest match, not the oldest. The newest scored match of a tournament in "
+    "a given year is that tournament's final in this database (there is no "
+    "stage column). The team that won that match is the champion — name it. "
+    "Tournament values are 'FIFA World Cup' "
     "(finals) and 'FIFA World Cup qualification' (qualifiers): for World Cup "
     "results use exact equality tournament = 'FIFA World Cup' or exclude "
     "qualifiers with NOT LIKE '%qualification%'.\n\n"
@@ -62,10 +66,13 @@ SYSTEM_PROMPT = (
     "not a fact in this conversation. "
     "COVERAGE — missing, empty, truncated, or NULL-score rows mean the dataset "
     "lacks evidence, not that the event did not occur. Never invent why (no date "
-    'extrapolation, no "last update", no "too early"). Say the answer is not '
-    "in this dataset (or state exactly which rows you have), that it may exist "
-    "outside the database, and offer a next step (more specific query, different "
-    "tool, check with a human). On user pushback, acknowledge the limitation once; "
+    'extrapolation, no "last update", no "too early"). '
+    "If a later query returns a complete scored last-match row, that row is "
+    "enough to name the tournament winner — do not say the champion is unknown. "
+    "Only say the answer is not in this dataset when you still have no scored "
+    "last-match row; then note it may exist outside the database and offer a "
+    "next step (more specific query, different tool, check with a human). "
+    "On user pushback, acknowledge the limitation once; "
     "do not argue; do not repeat an unsupported temporal claim. "
     "If the user challenges, doubts, or seems surprised by an answer you gave "
     "(e.g. '¿cómo?', 'estás seguro?', 'are you sure?'), "
@@ -83,8 +90,8 @@ ERROR_RETRY_REASK = (
 TRUNCATION_REASK = (
     "[SYSTEM] The last query hit the 50-row cap, so this sample is not the full "
     "result. Do not conclude coverage from it. Re-query more specifically — for a "
-    "tournament winner: ORDER BY match_date DESC LIMIT 1 (or a Final filter). Then "
-    "answer from that result."
+    "tournament winner: ORDER BY match_date DESC LIMIT 1 (or a Final filter). "
+    "Then name the winner from that scored row; it is the champion in this database."
 )
 
 COVERAGE_REASK = (
@@ -94,6 +101,26 @@ COVERAGE_REASK = (
     "(no dates, no recency, no 'last update'). Offer a concrete next step "
     "(a more specific query, a different tool, or checking with a human). "
     "Do not argue."
+)
+
+ANSWER_NOW_REASK = (
+    "[SYSTEM] No more tool calls. Answer from the last tool result only. "
+    "If it is a scored match, state the winner from home_score vs away_score. "
+    "That latest match is the tournament champion in this database. "
+    "Do not claim an event did not happen, and do not say the winner is unknown."
+)
+
+UNDERCLAIM_REASK = (
+    "[SYSTEM] The last tool result is a complete scored match. For a tournament "
+    "winner question, that latest match is the champion in this database. "
+    "Name the winner from home_score/away_score. Do not say the tournament "
+    "winner is unknown or that the full tournament is missing."
+)
+
+_LIMIT_FALLBACK = "I could not finish within the tool-call limit."
+_INCOMPLETE_FALLBACK = (
+    "This dataset does not contain a definitive answer. It may exist outside "
+    "this database. Try a more specific query or check with a human."
 )
 
 # Lexical phrases that claim an event never occurred — used to catch post-tool
@@ -107,6 +134,7 @@ _COVERAGE_OVERCLAIM_PHRASES = (
     "has not taken place",
     "hasn't taken place",
     "hasn't happened",
+    "has not happened",
     "last data update",
     "no se ha jugado",
     "no habría concluido",
@@ -117,6 +145,106 @@ def _is_coverage_overclaim(text: str) -> bool:
     """True when text claims an event did not occur."""
     lowered = text.lower()
     return any(phrase in lowered for phrase in _COVERAGE_OVERCLAIM_PHRASES)
+
+
+_WINNER_UNDERCLAIM_PHRASES = (
+    "cannot tell you who won",
+    "can't tell you who won",
+    "cannot determine who won",
+    "cannot tell you who won the entire",
+    "does not contain information about the full",
+    "full tournament",
+    "entire world cup",
+)
+
+
+def _is_winner_underclaim(text: str) -> bool:
+    """True when text refuses to name a winner despite having match evidence."""
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _WINNER_UNDERCLAIM_PHRASES)
+
+
+def _last_result_is_scored_match(tool_info: list) -> bool:
+    """True when the last complete SQL result is a scored home/away match."""
+    for ti in reversed(tool_info):
+        result = ti.get("result")
+        if not _is_complete_result(result):
+            continue
+        columns = result.get("columns") or []
+        rows = result.get("rows") or []
+        if not rows:
+            return False
+        col_i = {c: i for i, c in enumerate(columns)}
+        needed = {"home_team", "away_team", "home_score", "away_score"}
+        if not needed <= col_i.keys():
+            return False
+        row = rows[0]
+        return (
+            row[col_i["home_score"]] is not None
+            and row[col_i["away_score"]] is not None
+        )
+    return False
+
+
+def _is_complete_result(result) -> bool:
+    """True when a tool result is a full, usable payload (not error/truncated)."""
+    if not isinstance(result, dict) or "error" in result:
+        return False
+    if result.get("truncated") is True:
+        return False
+    if "rows" in result:
+        return bool(result["rows"])
+    return True
+
+
+def _has_complete_result(tool_info: list) -> bool:
+    return any(_is_complete_result(ti.get("result")) for ti in tool_info)
+
+
+def _format_sql_rows(columns: list, rows: list) -> str:
+    col_i = {c: i for i, c in enumerate(columns)}
+    row = rows[0]
+    if {"home_team", "away_team", "home_score", "away_score"} <= col_i.keys():
+        home = row[col_i["home_team"]]
+        away = row[col_i["away_team"]]
+        home_score = row[col_i["home_score"]]
+        away_score = row[col_i["away_score"]]
+        date = row[col_i["match_date"]] if "match_date" in col_i else None
+        tournament = row[col_i["tournament"]] if "tournament" in col_i else None
+        prefix = f"{date}: " if date else ""
+        suffix = f" ({tournament})" if tournament else ""
+        winner = None
+        try:
+            hs_n, as_n = int(home_score), int(away_score)
+            if hs_n > as_n:
+                winner = home
+            elif as_n > hs_n:
+                winner = away
+        except (TypeError, ValueError):
+            winner = None
+        score_line = f"{prefix}{home} {home_score}-{away_score} {away}{suffix}"
+        if winner:
+            return f"{winner} won. {score_line}."
+        return f"{score_line}."
+    header = " | ".join(str(c) for c in columns)
+    body = " | ".join(str(v) for v in row)
+    return f"The last query returned: {header} / {body}."
+
+
+def _format_last_tool_fallback(tool_info: list) -> str:
+    """Deterministic recap of the last complete tool result."""
+    for ti in reversed(tool_info):
+        result = ti.get("result")
+        if not _is_complete_result(result):
+            continue
+        rows = result.get("rows")
+        columns = result.get("columns")
+        if isinstance(columns, list) and rows:
+            return _format_sql_rows(columns, rows)
+        return (
+            "The last tool returned a complete result. Ask again if you need a recap."
+        )
+    return _LIMIT_FALLBACK
 
 
 # Grounding enforcement. Prompt instructions alone are not enough: Gemini's
@@ -292,11 +420,11 @@ def _needs_grounding(query: str) -> bool:
     )
 
 
-def _config() -> types.GenerateContentConfig:
-    return types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
-        tools=[types.Tool(function_declarations=TOOL_DECLARATIONS)],
-    )
+def _config(*, tools: bool = True) -> types.GenerateContentConfig:
+    kwargs: dict = {"system_instruction": SYSTEM_PROMPT}
+    if tools:
+        kwargs["tools"] = [types.Tool(function_declarations=TOOL_DECLARATIONS)]
+    return types.GenerateContentConfig(**kwargs)
 
 
 def _generate(client, *, model, history, config):
@@ -384,8 +512,10 @@ def run_turn_events(
     error_retry_used = False
     truncation_nudge_used = False
     coverage_nudge_used = False
+    underclaim_nudge_used = False
     last_tool_error = False
     last_tool_truncated = False
+    last_tool_info: list = []
 
     for _ in range(MAX_TOOL_ROUNDS):
         step += 1
@@ -427,8 +557,10 @@ def run_turn_events(
                 full_text = (
                     "I could not generate a response this time. Please try again."
                 )
+            can_nudge = step < MAX_TOOL_ROUNDS
             if (
-                not grounding_nudge_used
+                can_nudge
+                and not grounding_nudge_used
                 and not any_tool_calls_this_turn
                 and _needs_grounding(classifier_text)
             ):
@@ -441,7 +573,8 @@ def run_turn_events(
                 )
                 continue
             if (
-                not challenge_nudge_used
+                can_nudge
+                and not challenge_nudge_used
                 and not any_tool_calls_this_turn
                 and prior_model_turn
                 and _is_challenge(classifier_text)
@@ -455,7 +588,8 @@ def run_turn_events(
                 )
                 continue
             if (
-                not error_retry_used
+                can_nudge
+                and not error_retry_used
                 and last_tool_error
                 and _needs_grounding(classifier_text)
             ):
@@ -469,7 +603,7 @@ def run_turn_events(
                     )
                 )
                 continue
-            if not truncation_nudge_used and last_tool_truncated:
+            if can_nudge and not truncation_nudge_used and last_tool_truncated:
                 # Bounded truncation enforcement: the last tool round returned a
                 # capped sample and the model tried to answer from it. Inject ONE
                 # re-ask that forces a more specific query, then continue the loop.
@@ -480,7 +614,11 @@ def run_turn_events(
                     )
                 )
                 continue
-            if not coverage_nudge_used and _is_coverage_overclaim(full_text):
+            if (
+                can_nudge
+                and not coverage_nudge_used
+                and _is_coverage_overclaim(full_text)
+            ):
                 # Bounded coverage-overclaim enforcement: the model claimed an
                 # event never happened (from incomplete results or memory).
                 # Runs after grounding/challenge/error/truncation nudges.
@@ -490,6 +628,31 @@ def run_turn_events(
                     types.Content(role="user", parts=[types.Part(text=COVERAGE_REASK)])
                 )
                 continue
+            if (
+                can_nudge
+                and not underclaim_nudge_used
+                and last_tool_info
+                and _last_result_is_scored_match(last_tool_info)
+                and _is_winner_underclaim(full_text)
+            ):
+                underclaim_nudge_used = True
+                history.append(
+                    types.Content(
+                        role="user", parts=[types.Part(text=UNDERCLAIM_REASK)]
+                    )
+                )
+                continue
+            if _is_coverage_overclaim(full_text):
+                if last_tool_info and _has_complete_result(last_tool_info):
+                    full_text = _format_last_tool_fallback(last_tool_info)
+                else:
+                    full_text = _INCOMPLETE_FALLBACK
+            elif (
+                last_tool_info
+                and _last_result_is_scored_match(last_tool_info)
+                and _is_winner_underclaim(full_text)
+            ):
+                full_text = _format_last_tool_fallback(last_tool_info)
             if trace_ctx:
                 trace.save_step(
                     trace_ctx["session_id"],
@@ -537,7 +700,52 @@ def run_turn_events(
             isinstance(ti["result"], dict) and ti["result"].get("truncated") is True
             for ti in tool_info
         )
+        last_tool_info = tool_info
         history.append(types.Content(role="user", parts=result_parts))
+
+    # Reserved answer slot: error/truncation/coverage nudges share MAX_TOOL_ROUNDS
+    # with tool calls, so a successful last query can arrive with no generate left.
+    if last_tool_info and _has_complete_result(last_tool_info):
+        history.append(
+            types.Content(role="user", parts=[types.Part(text=ANSWER_NOW_REASK)])
+        )
+        step += 1
+        text_parts = []
+        fn_calls = []
+        for chunk in _generate_stream(
+            client, model=model, history=history, config=_config(tools=False)
+        ):
+            if not chunk.candidates:
+                continue
+            candidate = chunk.candidates[0]
+            if not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                if part.function_call:
+                    fn_calls.append(part.function_call)
+                elif part.text:
+                    text_parts.append(part.text)
+        raw_text = "".join(text_parts)
+        used_fallback = (
+            bool(fn_calls)
+            or not raw_text
+            or _is_coverage_overclaim(raw_text)
+            or _is_winner_underclaim(raw_text)
+        )
+        full_text = (
+            _format_last_tool_fallback(last_tool_info) if used_fallback else raw_text
+        )
+        if not used_fallback:
+            yield {"type": "delta", "text": full_text}
+        if trace_ctx:
+            trace.save_step(
+                trace_ctx["session_id"],
+                trace_ctx["turn_id"],
+                step,
+                {"kind": "answer", "text": full_text},
+            )
+        yield {"type": "done", "answer": full_text}
+        return history, step
 
     if trace_ctx:
         trace.save_step(
@@ -546,8 +754,7 @@ def run_turn_events(
             step + 1,
             {"kind": "limit_exceeded", "rounds": MAX_TOOL_ROUNDS},
         )
-    fallback = "I could not finish within the tool-call limit."
-    yield {"type": "done", "answer": fallback}
+    yield {"type": "done", "answer": _LIMIT_FALLBACK}
     return history, step + 1
 
 

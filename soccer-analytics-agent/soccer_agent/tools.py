@@ -418,7 +418,7 @@ TOOL_DECLARATIONS = [
             "case-insensitive text use ILIKE (e.g. tournament ILIKE '%world cup%'). "
             "Tables: "
             "matches(match_date, home_team, away_team, home_score, away_score, "
-            "tournament, city, country, neutral), "
+            "winner, tournament, city, country, neutral), "
             "goalscorers(match_date, home_team, away_team, team, scorer, minute, "
             "own_goal, penalty), "
             "shootouts(match_date, home_team, away_team, winner, first_shooter), "

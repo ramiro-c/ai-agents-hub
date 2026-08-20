@@ -71,6 +71,8 @@ def main() -> None:
             conn.execute(f"TRUNCATE {table}")
             n = load_csv(conn, table, columns, dataset_dir / filename)
             print(f"{table}: {n} rows")
+        db.populate_match_winners(conn)
+        print("matches.winner: populated from scores and shootouts")
 
 
 if __name__ == "__main__":

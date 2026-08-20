@@ -10,8 +10,11 @@ CREATE TABLE IF NOT EXISTS matches (
     tournament TEXT,
     city TEXT,
     country TEXT,
-    neutral BOOLEAN
+    neutral BOOLEAN,
+    winner TEXT
 );
+
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT;
 
 CREATE TABLE IF NOT EXISTS goalscorers (
     id BIGSERIAL PRIMARY KEY,
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS shootouts (
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches (match_date);
 CREATE INDEX IF NOT EXISTS idx_matches_home ON matches (home_team);
 CREATE INDEX IF NOT EXISTS idx_matches_away ON matches (away_team);
+CREATE INDEX IF NOT EXISTS idx_matches_winner ON matches (winner);
 CREATE INDEX IF NOT EXISTS idx_goalscorers_scorer ON goalscorers (scorer);
 
 -- --- Memory tables (Phase 2) ---

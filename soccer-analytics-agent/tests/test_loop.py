@@ -3,12 +3,17 @@ from types import SimpleNamespace
 import pytest
 from google.genai import errors, types
 from soccer_agent.loop import (
+    _LIMIT_FALLBACK,
+    ANSWER_NOW_REASK,
     CHALLENGE_REASK,
     COVERAGE_REASK,
     GROUNDING_REASK,
     SYSTEM_PROMPT,
     TRUNCATION_REASK,
+    UNDERCLAIM_REASK,
+    _format_last_tool_fallback,
     _is_coverage_overclaim,
+    _is_winner_underclaim,
     run_turn,
 )
 
@@ -203,6 +208,8 @@ def test_system_prompt_enforces_tool_grounding():
     assert "COVERAGE" in SYSTEM_PROMPT
     assert "lacks evidence, not that the event did not occur" in SYSTEM_PROMPT
     assert "state exactly what the database shows" in SYSTEM_PROMPT
+    assert "that row is enough to name the tournament winner" in SYSTEM_PROMPT
+    assert "newest scored match of a tournament" in SYSTEM_PROMPT
     assert "July 2026" not in SYSTEM_PROMPT
     assert "last data update" not in SYSTEM_PROMPT.lower()
     assert "July 2026" not in CHALLENGE_REASK
@@ -378,6 +385,12 @@ def test_is_coverage_overclaim_detects_non_occurrence_phrases():
     """Lexical non-occurrence phrases must trip the overclaim detector."""
     assert _is_coverage_overclaim("the tournament would not have concluded") is True
     assert _is_coverage_overclaim("That tournament has not taken place yet.") is True
+    assert (
+        _is_coverage_overclaim(
+            "The 2026 World Cup has not happened yet, so there is no winner."
+        )
+        is True
+    )
     assert (
         _is_coverage_overclaim(
             "The tournament would not have concluded; "
@@ -864,3 +877,190 @@ def test_is_challenge_lexical_gate_skips_semantic(monkeypatch):
     monkeypatch.setattr("soccer_agent.loop._semantic_is_challenge", fail_semantic)
 
     assert _is_challenge("como?") is True
+
+
+def _wc_dispatch(name, args):
+    sql = args.get("sql", "")
+    if "winner" in sql:
+        return {"error": 'column "winner" does not exist'}
+    if "LIMIT 1" in sql.upper():
+        return {
+            "columns": [
+                "match_date",
+                "home_team",
+                "away_team",
+                "home_score",
+                "away_score",
+                "tournament",
+            ],
+            "rows": [["2026-07-19", "Spain", "Argentina", "1", "0", "FIFA World Cup"]],
+        }
+    return {
+        "columns": ["match_date", "home_team", "away_team", "home_score", "away_score"],
+        "rows": [["2026-06-11", "Mexico", "South Africa", "2", "0"]] * 50,
+        "truncated": True,
+    }
+
+
+def _fc(sql: str):
+    return types.Part.from_function_call(name="sql_query", args={"sql": sql})
+
+
+def test_format_last_tool_fallback_names_match_winner():
+    tool_info = [
+        {
+            "tool": "sql_query",
+            "result": {
+                "columns": [
+                    "match_date",
+                    "home_team",
+                    "away_team",
+                    "home_score",
+                    "away_score",
+                    "tournament",
+                ],
+                "rows": [
+                    ["2026-07-19", "Spain", "Argentina", "1", "0", "FIFA World Cup"]
+                ],
+            },
+        }
+    ]
+    recap = _format_last_tool_fallback(tool_info)
+    assert "Spain won" in recap
+    assert "1-0" in recap
+    assert "Argentina" in recap
+
+
+def test_run_turn_reserved_answer_after_nudges_eat_budget(monkeypatch):
+    """Error + truncation nudges + 3 tools must still answer from the LIMIT 1 row."""
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _wc_dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response([_fc("SELECT winner FROM matches")]),
+                _response([types.Part(text="I hit an error looking up the winner.")]),
+                _response([_fc("SELECT match_date FROM matches")]),
+                _response([types.Part(text="The final has not been played yet.")]),
+                _response(
+                    [
+                        _fc(
+                            "SELECT match_date, home_team, away_team, home_score, "
+                            "away_score, tournament FROM matches "
+                            "ORDER BY match_date DESC LIMIT 1"
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part(
+                            text="Spain won the 2026 World Cup, beating Argentina 1-0."
+                        )
+                    ]
+                ),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "Who won the 2026 World Cup?", model="test"
+    )
+
+    assert ANSWER_NOW_REASK in _model_call_text(fake, 5)
+    assert "Spain" in answer
+    assert "1-0" in answer
+    assert _LIMIT_FALLBACK not in answer
+    assert steps == 6
+
+
+def test_run_turn_reserved_answer_fallback_when_model_still_overclaims(monkeypatch):
+    """If the extra generate still overclaims, recap the last complete SQL row."""
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _wc_dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response([_fc("SELECT winner FROM matches")]),
+                _response([types.Part(text="I hit an error looking up the winner.")]),
+                _response([_fc("SELECT match_date FROM matches")]),
+                _response([types.Part(text="The final has not been played yet.")]),
+                _response(
+                    [_fc("SELECT * FROM matches ORDER BY match_date DESC LIMIT 1")]
+                ),
+                _response([types.Part(text="The final has not been played yet.")]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "Who won the 2026 World Cup?", model="test"
+    )
+
+    assert "Spain won" in answer
+    assert "has not been played" not in answer.lower()
+    assert _LIMIT_FALLBACK not in answer
+    assert steps == 6
+
+
+def test_is_winner_underclaim_detects_hedge_after_final_row():
+    hedge = (
+        "Spain defeated Argentina 1-0 on July 19, 2026. However, my database "
+        "does not contain information about the full tournament, so I cannot "
+        "tell you who won the entire 2026 World Cup."
+    )
+    assert _is_winner_underclaim(hedge) is True
+    assert _is_winner_underclaim("Spain won the 2026 World Cup.") is False
+
+
+def test_run_turn_underclaim_after_scored_last_match_is_replaced(monkeypatch):
+    """A hedge after a complete last-match row must not be shown as the answer."""
+    hedge = (
+        "Spain defeated Argentina 1-0. However, my database does not contain "
+        "information about the full tournament, so I cannot tell you who won "
+        "the entire 2026 World Cup."
+    )
+
+    def _dispatch(name, args):
+        return {
+            "columns": [
+                "match_date",
+                "home_team",
+                "away_team",
+                "home_score",
+                "away_score",
+                "tournament",
+            ],
+            "rows": [["2026-07-19", "Spain", "Argentina", "1", "0", "FIFA World Cup"]],
+        }
+
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={
+                                "sql": (
+                                    "SELECT match_date, home_team, away_team, "
+                                    "home_score, away_score, tournament FROM matches "
+                                    "WHERE tournament = 'FIFA World Cup' "
+                                    "ORDER BY match_date DESC LIMIT 1"
+                                )
+                            },
+                        )
+                    ]
+                ),
+                _response([types.Part(text=hedge)]),
+                _response([types.Part(text=hedge)]),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "Who won the 2026 World Cup?", model="test"
+    )
+
+    assert UNDERCLAIM_REASK in _model_call_text(fake, 2)
+    assert "Spain won" in answer
+    assert "cannot tell you who won" not in answer.lower()
+    assert "full tournament" not in answer.lower()

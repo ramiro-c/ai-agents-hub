@@ -21,3 +21,27 @@ def apply_schema() -> None:
     """Create tables and extensions if they do not exist (idempotent)."""
     with connect() as conn:
         conn.execute(SCHEMA_PATH.read_text())
+        populate_match_winners(conn)
+
+
+def populate_match_winners(conn) -> None:
+    """Fill matches.winner from scores, then overlay shootout winners on draws."""
+    conn.execute(
+        """
+        UPDATE matches SET winner = CASE
+            WHEN home_score > away_score THEN home_team
+            WHEN away_score > home_score THEN away_team
+            ELSE NULL
+        END
+        """
+    )
+    conn.execute(
+        """
+        UPDATE matches AS m
+        SET winner = s.winner
+        FROM shootouts AS s
+        WHERE m.match_date = s.match_date
+          AND m.home_team = s.home_team
+          AND m.away_team = s.away_team
+        """
+    )
