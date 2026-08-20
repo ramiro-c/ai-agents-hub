@@ -192,11 +192,18 @@ def test_system_prompt_enforces_tool_grounding():
     """Match facts must be tool-backed; the model must never answer from memory."""
     assert "GROUNDING" in SYSTEM_PROMPT
     assert "ALWAYS call a" in SYSTEM_PROMPT
-    assert "NULL" in SYSTEM_PROMPT
     assert "not a fact in this conversation" in SYSTEM_PROMPT
-    # A challenged, tool-backed answer must never be retracted from memory.
-    assert "DO NOT retract it based on your training knowledge" in SYSTEM_PROMPT
-    assert "Re-verify with a tool call" in SYSTEM_PROMPT
+    # A challenged, tool-backed answer must never be retracted from parametric memory.
+    assert "tool-backed positive fact" in SYSTEM_PROMPT
+    assert "parametric memory" in SYSTEM_PROMPT
+    assert "re-verify with a tool call" in SYSTEM_PROMPT
+    # Coverage: missing data ≠ event did not happen.
+    assert "COVERAGE" in SYSTEM_PROMPT
+    assert "lacks evidence, not that the event did not occur" in SYSTEM_PROMPT
+    assert "July 2026" not in SYSTEM_PROMPT
+    assert "last data update" not in SYSTEM_PROMPT.lower()
+    assert "July 2026" not in CHALLENGE_REASK
+    assert "last data update" not in CHALLENGE_REASK.lower()
 
 
 def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
