@@ -202,6 +202,7 @@ def test_system_prompt_enforces_tool_grounding():
     # Coverage: missing data ≠ event did not happen.
     assert "COVERAGE" in SYSTEM_PROMPT
     assert "lacks evidence, not that the event did not occur" in SYSTEM_PROMPT
+    assert "state exactly what the database shows" in SYSTEM_PROMPT
     assert "July 2026" not in SYSTEM_PROMPT
     assert "last data update" not in SYSTEM_PROMPT.lower()
     assert "July 2026" not in CHALLENGE_REASK
@@ -371,20 +372,89 @@ def test_is_coverage_overclaim_honest_ignorance_is_false():
     assert (
         _is_coverage_overclaim("I don't have that information in this dataset") is False
     )
-    # Would match overclaim if _COVERAGE_IGNORANCE_PHRASES guard were absent.
-    assert (
-        _is_coverage_overclaim(
-            "The tournament would not have concluded; "
-            "that match is not in this dataset."
-        )
-        is False
-    )
 
 
 def test_is_coverage_overclaim_detects_non_occurrence_phrases():
     """Lexical non-occurrence phrases must trip the overclaim detector."""
     assert _is_coverage_overclaim("the tournament would not have concluded") is True
     assert _is_coverage_overclaim("That tournament has not taken place yet.") is True
+    assert (
+        _is_coverage_overclaim(
+            "The tournament would not have concluded; "
+            "that match is not in this dataset."
+        )
+        is True
+    )
+
+
+def _incomplete_coverage_history():
+    """Prior turn: tool ran but the answer reflected incomplete coverage."""
+    return [
+        types.Content(
+            role="user",
+            parts=[types.Part(text="who won the 2026 World Cup?")],
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_function_call(
+                    name="sql_query",
+                    args={"sql": "SELECT home_team, away_team FROM matches LIMIT 5"},
+                )
+            ],
+        ),
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_function_response(
+                    name="sql_query",
+                    response={
+                        "result": {
+                            "rows": [
+                                ["Brazil", "Serbia"],
+                                ["Germany", "Japan"],
+                            ],
+                        }
+                    },
+                )
+            ],
+        ),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    text="I found some group-stage rows but no clear final result "
+                    "in this dataset."
+                )
+            ],
+        ),
+    ]
+
+
+def test_run_turn_coverage_overclaim_nudge_after_challenge_pushback():
+    """Pushback after incomplete coverage: challenge then coverage on text overclaim."""
+    overclaim = "The tournament would not have concluded."
+    honest_answer = (
+        "I don't have that information in this dataset. "
+        "Try a more specific query for the final, or check with a human."
+    )
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response([types.Part(text=overclaim)]),
+                _response([types.Part(text=overclaim)]),
+                _response([types.Part(text=honest_answer)]),
+            ]
+        )
+    )
+
+    history = _incomplete_coverage_history()
+    answer, history, steps = run_turn(fake, history, "are you sure?", model="test")
+
+    assert CHALLENGE_REASK in _model_call_text(fake, 1)
+    assert COVERAGE_REASK in _model_call_text(fake, 2)
+    assert "in this dataset" in answer.lower()
+    assert "would not have concluded" not in answer.lower()
 
 
 def test_run_turn_coverage_overclaim_nudge_after_tools(monkeypatch):

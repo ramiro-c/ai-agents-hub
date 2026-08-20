@@ -56,7 +56,9 @@ SYSTEM_PROMPT = (
     "GROUNDING — never answer match results, tournament winners, teams, scores, "
     "or any factual claim about matches from your memory. ALWAYS call a "
     "tool (sql_query, get_h2h, get_team_form, get_team_elo) to resolve facts "
-    "before answering. A fact not backed by a tool result is "
+    "before answering. If tools return no rows, missing scores (NULL), or "
+    "incomplete data, state exactly what the database shows and explicitly say "
+    "what is missing instead of guessing. A fact not backed by a tool result is "
     "not a fact in this conversation. "
     "COVERAGE — missing, empty, truncated, or NULL-score rows mean the dataset "
     "lacks evidence, not that the event did not occur. Never invent why (no date "
@@ -109,19 +111,11 @@ _COVERAGE_OVERCLAIM_PHRASES = (
     "no se ha jugado",
     "no habría concluido",
 )
-_COVERAGE_IGNORANCE_PHRASES = (
-    "not in this dataset",
-    "not in the dataset",
-    "no está en este dataset",
-    "no está en la base de datos",
-)
 
 
 def _is_coverage_overclaim(text: str) -> bool:
-    """True when text claims an event did not occur (not honest dataset ignorance)."""
+    """True when text claims an event did not occur."""
     lowered = text.lower()
-    if any(phrase in lowered for phrase in _COVERAGE_IGNORANCE_PHRASES):
-        return False
     return any(phrase in lowered for phrase in _COVERAGE_OVERCLAIM_PHRASES)
 
 
@@ -486,13 +480,10 @@ def run_turn_events(
                     )
                 )
                 continue
-            if (
-                not coverage_nudge_used
-                and any_tool_calls_this_turn
-                and _is_coverage_overclaim(full_text)
-            ):
-                # Bounded coverage-overclaim enforcement: after tools ran, the
-                # model claimed an event never happened from incomplete results.
+            if not coverage_nudge_used and _is_coverage_overclaim(full_text):
+                # Bounded coverage-overclaim enforcement: the model claimed an
+                # event never happened (from incomplete results or memory).
+                # Runs after grounding/challenge/error/truncation nudges.
                 # Inject ONE re-ask, then continue the loop.
                 coverage_nudge_used = True
                 history.append(
