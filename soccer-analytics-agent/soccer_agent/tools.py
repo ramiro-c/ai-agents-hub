@@ -33,11 +33,16 @@ def sql_query(sql: str) -> dict:
             conn.execute(f"SET statement_timeout = {TIMEOUT_MS}")
             cur = conn.execute(cleaned)
             columns = [d.name for d in cur.description]
+            fetched = cur.fetchmany(MAX_ROWS + 1)
+            truncated = len(fetched) > MAX_ROWS
             rows = [
                 [str(v) if v is not None else None for v in r]
-                for r in cur.fetchmany(MAX_ROWS)
+                for r in fetched[:MAX_ROWS]
             ]
-        return {"columns": columns, "rows": rows}
+        result: dict = {"columns": columns, "rows": rows}
+        if truncated:
+            result["truncated"] = True
+        return result
     except Exception as exc:  # surfaced to the model as a tool result
         return {"error": str(exc)}
 
@@ -418,7 +423,9 @@ TOOL_DECLARATIONS = [
             "own_goal, penalty), "
             "shootouts(match_date, home_team, away_team, winner, first_shooter), "
             "team_elo(team, elo, matches_played, updated_at). "
-            "Results are capped at 50 rows, so aggregate or LIMIT accordingly."
+            "Results are capped at 50 rows; when truncated is true the result is "
+            "incomplete (not the full match set). Re-query with a tighter filter "
+            "or ORDER BY ... LIMIT — do not conclude coverage from a truncated sample."
         ),
         "parameters": {
             "type": "object",

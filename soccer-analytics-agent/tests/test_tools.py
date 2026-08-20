@@ -36,6 +36,15 @@ def test_validate_rejects_writes(bad):
 def test_sql_query_caps_rows():
     result = sql_query("SELECT generate_series(1, 1000)")
     assert len(result["rows"]) == 50
+    assert result.get("truncated") is True
+
+
+@pytest.mark.integration
+@requires_db
+def test_sql_query_under_cap_not_truncated():
+    result = sql_query("SELECT generate_series(1, 10)")
+    assert len(result["rows"]) == 10
+    assert result.get("truncated") is not True
 
 
 @pytest.mark.integration
