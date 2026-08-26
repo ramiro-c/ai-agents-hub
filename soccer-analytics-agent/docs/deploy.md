@@ -132,6 +132,22 @@ psql -h localhost -p 5432 -U postgres -d soccer -c \
 psql -h localhost -p 5432 -U postgres -d soccer -c \
   "SELECT indexname, indexdef FROM pg_indexes WHERE tablename IN ('match_documents','team_elo');"
 # Expect HNSW (vector) + GIN (tsvector) indexes restored.
+
+# 4.8 Schema patches after the initial restore
+#     soccer_app is SELECT-only on matches; the Cloud Run container does not
+#     run apply_schema() at boot. Column additions (e.g. matches.winner) must
+#     be applied as postgres through the Auth Proxy. Cloud Run keeps using
+#     soccer_app — resetting the postgres password does not break the app.
+#     GRANT SELECT ON matches already covers new columns.
+#
+#     cloud-sql-proxy --token="$(gcloud auth print-access-token --account rami992009@gmail.com)" \
+#       --port 15432 "${P}:us-central1:soccer-agent-db"
+#     # If postgres password is unknown:
+#     gcloud sql users set-password postgres --instance soccer-agent-db \
+#       --project $P --account rami992009@gmail.com --prompt-for-password
+#     DATABASE_URL=postgresql://postgres:<pass>@127.0.0.1:15432/soccer \
+#       uv run python scripts/migrate_match_winners.py
+#     Expect ~38907/49520 rows with winner, and the 2026 WC last row Spain.
 ```
 
 ## 5. Create the DATABASE_URL secret
