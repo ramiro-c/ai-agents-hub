@@ -197,13 +197,21 @@ export default function App() {
             <h1 className="text-[15px] font-semibold tracking-tight text-fg">
               Soccer Analytics Agent
             </h1>
-            <p className="font-mono text-[10.5px] tracking-wide text-fg-faint">
+            <p className="hidden font-mono text-[10.5px] tracking-wide text-fg-faint sm:block">
               Gemini ({geminiModel}) · Postgres + pgvector · 49K matches
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <HealthPill status={healthStatus} />
+          <span
+            title={sessionId}
+            className="hidden select-all font-mono text-[10.5px] text-fg-faint sm:inline"
+          >
+            session {sessionId.slice(0, 8)}
+          </span>
+          <span className="hidden sm:inline-flex">
+            <HealthPill status={healthStatus} />
+          </span>
           <button
             type="button"
             onClick={() => {

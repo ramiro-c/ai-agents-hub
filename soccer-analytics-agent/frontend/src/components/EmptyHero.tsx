@@ -4,7 +4,6 @@ const CHIPS = [
   "Predict Argentina vs France",
   "Show me Brazil's last 5 matches",
   "Head-to-head: Argentina vs Germany",
-  "Compare Messi vs Ronaldo stats",
 ];
 
 interface Props {
