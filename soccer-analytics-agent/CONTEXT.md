@@ -180,9 +180,16 @@ Phase 1 onward. Full design in the spec; per-phase detail in the plans.
   exists and `content.parts` is non-`None`. On a safety block or `MAX_TOKENS`
   finish, `candidates` can be empty and `parts` can be `None` → crash. Harden when
   adding observability.
-- **Smoke test assertion:** `scripts/smoke_test.py` should assert a *grounded*
-  answer (e.g. contains digits), not just non-empty text — otherwise it greens on
-  a failed run. Tighten when convenient.
+  - **Smoke test assertion:** `scripts/smoke_test.py` should assert a *grounded*
+    answer (e.g. contains digits), not just non-empty text — otherwise it greens on
+    a failed run. Tighten when convenient.
+  - **Golden eval set (nice-to-have):** no live golden harness yet. Unit tests
+    use `FakeModels`; smoke is one live question that only checks digits + ≥1
+    tool call, so regressions like “Who won the 2026 World Cup?” can still
+    ship. Next step: a small `evals/golden.jsonl` (must_contain / must_not_contain
+    / required tools, facts from this DB — not full prose) plus a runner like
+    `scripts/smoke_test.py`. Keep it out of default `pytest` (Vertex cost +
+    flake). Do not pull in Promptfoo/LangSmith unless the set grows.
 - **Observability is the missing debugging tool (→ Phase 5):** tool calls and
   results currently live only in the in-memory `history` and vanish when the
   process ends. There is no persistent log. Phase 5 writes a step trace to a
