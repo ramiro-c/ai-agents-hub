@@ -14,6 +14,7 @@ from soccer_agent.loop import (
     _format_last_tool_fallback,
     _is_coverage_overclaim,
     _is_winner_underclaim,
+    _needs_grounding,
     run_turn,
 )
 
@@ -269,6 +270,22 @@ def test_run_turn_grounding_nudge_never_fires_for_chit_chat():
     assert answer == "Hi!"
     assert len(history) == 2
     assert len(fake.models.calls) == 1  # no extra nudge round
+
+
+def test_needs_grounding_covers_spanish_demo_chips():
+    """LinkedIn empty-state chips must trigger the tool-forcing re-ask."""
+    chips = [
+        "¿Quién ganó el Mundial 2026?",
+        "¿Cuál es el Elo de Argentina?",
+        "Predice España vs Argentina",
+        "Últimos 5 partidos de Argentina",
+        "Historial Argentina vs España",
+        "¿Quién salió tercero en 2026?",
+    ]
+    for chip in chips:
+        assert _needs_grounding(chip), chip
+    assert not _needs_grounding("hello")
+    assert not _needs_grounding("gracias")
 
 
 def test_run_turn_truncation_nudge_forces_refined_query(monkeypatch):
