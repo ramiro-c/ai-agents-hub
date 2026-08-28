@@ -149,7 +149,10 @@ psql -h localhost -p 5432 -U postgres -d soccer -c \
 #       uv run python scripts/migrate_match_winners.py
 #     Expect ~38907/49520 rows with winner, and the 2026 WC last row Spain.
 #
-#     Backfill matches.stage from the FIFA calendar API (2026 WC rounds):
+#     Backfill matches.stage from the FIFA calendar API (2026 WC rounds).
+#     Run migrate_match_stages.py before redeploying the agent image that queries
+#     matches.stage — the new revision emits WHERE stage = ... and the column must
+#     exist first:
 #     DATABASE_URL=postgresql://postgres:<pass>@127.0.0.1:15432/soccer \
 #       uv run python scripts/migrate_match_stages.py
 #     Expect stage counts by round; France vs England 2026-07-18 is Third-place playoff.

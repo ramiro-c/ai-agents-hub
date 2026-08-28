@@ -1,4 +1,8 @@
-"""Download the Kaggle international results dataset and load it into Postgres."""
+"""Download the Kaggle international results dataset and load it into Postgres.
+
+Truncates matches and repopulates winner only; matches.stage (2026 WC) is not
+restored — run scripts/migrate_match_stages.py after load for stage backfill.
+"""
 
 import csv
 from pathlib import Path
@@ -73,6 +77,10 @@ def main() -> None:
             print(f"{table}: {n} rows")
         db.populate_match_winners(conn)
         print("matches.winner: populated from scores and shootouts")
+        print(
+            "matches.stage: not loaded (Kaggle CSV has no stage). "
+            "Run scripts/migrate_match_stages.py to backfill 2026 WC stages."
+        )
 
 
 if __name__ == "__main__":

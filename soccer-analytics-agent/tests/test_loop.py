@@ -221,6 +221,14 @@ def test_system_prompt_enforces_tool_grounding():
 
 def test_system_prompt_names_third_place_playoff_stage():
     assert "Third-place playoff" in SYSTEM_PROMPT
+    assert "only for the 2026" in SYSTEM_PROMPT
+
+
+def test_sql_query_tool_stage_scoped_to_2026_world_cup():
+    from soccer_agent.tools import TOOL_DECLARATIONS
+
+    sql_decl = next(d for d in TOOL_DECLARATIONS if d["name"] == "sql_query")
+    assert "only for the 2026" in sql_decl["description"]
 
 
 def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
