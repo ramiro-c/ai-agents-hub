@@ -11,10 +11,12 @@ CREATE TABLE IF NOT EXISTS matches (
     city TEXT,
     country TEXT,
     neutral BOOLEAN,
-    winner TEXT
+    winner TEXT,
+    stage TEXT
 );
 
 ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS stage TEXT;
 
 CREATE TABLE IF NOT EXISTS goalscorers (
     id BIGSERIAL PRIMARY KEY,
