@@ -211,6 +211,8 @@ def test_system_prompt_enforces_tool_grounding():
     assert "state exactly what the database shows" in SYSTEM_PROMPT
     assert "that row is enough to name the tournament winner" in SYSTEM_PROMPT
     assert "newest scored match of a tournament" in SYSTEM_PROMPT
+    assert "LIMIT without ORDER BY" in SYSTEM_PROMPT
+    assert "third-place" in SYSTEM_PROMPT
     assert "July 2026" not in SYSTEM_PROMPT
     assert "last data update" not in SYSTEM_PROMPT.lower()
     assert "July 2026" not in CHALLENGE_REASK
@@ -355,6 +357,97 @@ def test_run_turn_truncation_nudge_forces_refined_query(monkeypatch):
     assert len(history) == 8
 
 
+def test_run_turn_unordered_limit_nudge_forces_order_by(monkeypatch):
+    """LIMIT without ORDER BY is an arbitrary row — do not accept it as the answer."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        sql = args.get("sql", "").upper()
+        if "ORDER BY" in sql:
+            return {
+                "columns": [
+                    "match_date",
+                    "home_team",
+                    "away_team",
+                    "home_score",
+                    "away_score",
+                    "winner",
+                ],
+                "rows": [
+                    ["2026-07-19", "Spain", "Argentina", "1", "0", "Spain"],
+                    ["2026-07-18", "France", "England", "4", "6", "England"],
+                ],
+            }
+        return {"columns": ["winner"], "rows": [["Turkey"]]}
+
+    unordered_sql = (
+        "SELECT winner FROM matches WHERE EXTRACT(YEAR FROM match_date) = 2026 "
+        "AND tournament = 'FIFA World Cup' LIMIT 1"
+    )
+    ordered_sql = (
+        "SELECT match_date, home_team, away_team, home_score, away_score, winner "
+        "FROM matches WHERE tournament = 'FIFA World Cup' "
+        "AND EXTRACT(YEAR FROM match_date) = 2026 "
+        "ORDER BY match_date DESC LIMIT 2"
+    )
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": unordered_sql},
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part(
+                            text=(
+                                "El ganador fue Turquía. No se puede determinar "
+                                "quién quedó tercero. El evento aún no ha ocurrido."
+                            )
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": ordered_sql},
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part(
+                            text=(
+                                "Inglaterra quedó tercera, 6-4 a Francia "
+                                "el 18 de julio."
+                            )
+                        )
+                    ]
+                ),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake, [], "¿Quién salió tercero en 2026?", model="test"
+    )
+
+    assert "LIMIT without ORDER BY" in _model_call_text(fake, 2)
+    assert len(fetch_calls) == 2
+    assert "ORDER BY" not in fetch_calls[0][1]["sql"].upper()
+    assert "ORDER BY" in fetch_calls[1][1]["sql"].upper()
+    assert "Inglaterra" in answer or "England" in answer
+    assert "Turquía" not in answer and "Turkey" not in answer
+    assert len(history) == 8
+
+
 def test_run_turn_truncation_nudge_never_fires_without_truncated_flag(monkeypatch):
     """A complete tool result must not trigger the truncation re-ask."""
     fetch_calls = []
@@ -371,7 +464,12 @@ def test_run_turn_truncation_nudge_never_fires_without_truncated_flag(monkeypatc
                     [
                         types.Part.from_function_call(
                             name="sql_query",
-                            args={"sql": "SELECT * FROM matches LIMIT 1"},
+                            args={
+                                "sql": (
+                                    "SELECT * FROM matches "
+                                    "ORDER BY match_date DESC LIMIT 1"
+                                )
+                            },
                         )
                     ]
                 ),
@@ -412,6 +510,13 @@ def test_is_coverage_overclaim_detects_non_occurrence_phrases():
         _is_coverage_overclaim(
             "The tournament would not have concluded; "
             "that match is not in this dataset."
+        )
+        is True
+    )
+    assert (
+        _is_coverage_overclaim(
+            "Los datos para 2026 parecen de prueba, "
+            "ya que el evento aún no ha ocurrido."
         )
         is True
     )

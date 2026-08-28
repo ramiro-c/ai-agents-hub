@@ -425,7 +425,11 @@ TOOL_DECLARATIONS = [
             "team_elo(team, elo, matches_played, updated_at). "
             "Results are capped at 50 rows; when truncated is true the result is "
             "incomplete (not the full match set). Re-query with a tighter filter "
-            "or ORDER BY ... LIMIT — do not conclude coverage from a truncated sample."
+            "or ORDER BY ... LIMIT — do not conclude coverage from a "
+            "truncated sample. "
+            "Never LIMIT without ORDER BY match_date; unordered LIMIT returns an "
+            "arbitrary row. For tournament podium: ORDER BY match_date DESC LIMIT 2 "
+            "(last match = final, previous = third-place playoff)."
         ),
         "parameters": {
             "type": "object",

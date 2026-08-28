@@ -44,9 +44,14 @@ SYSTEM_PROMPT = (
     "winner (derived from the score, or from shootouts on a draw). "
     "For 'latest', 'most recent', or tournament-winner "
     "questions, always ORDER BY match_date DESC before LIMIT so you see the "
-    "newest match, not the oldest. The newest scored match of a tournament in "
+    "newest match, not the oldest. Never use LIMIT without ORDER BY match_date "
+    "— an unordered LIMIT 1 returns an arbitrary match, not the champion. "
+    "The newest scored match of a tournament in "
     "a given year is that tournament's final in this database (there is no "
     "stage column). The team that won that match is the champion — name it. "
+    "Podium: that final's loser is runner-up; the previous match is the "
+    "third-place playoff and its winner is third. For third place, "
+    "ORDER BY match_date DESC LIMIT 2 and read the second row. "
     "Tournament values are 'FIFA World Cup' "
     "(finals) and 'FIFA World Cup qualification' (qualifiers): for World Cup "
     "results use exact equality tournament = 'FIFA World Cup' or exclude "
@@ -94,6 +99,14 @@ TRUNCATION_REASK = (
     "Then name the winner from that scored row; it is the champion in this database."
 )
 
+UNORDERED_LIMIT_REASK = (
+    "[SYSTEM] The last sql_query used LIMIT without ORDER BY, so the row is "
+    "arbitrary (not the latest match). Re-query with ORDER BY match_date DESC. "
+    "For a tournament: last match = final (champion vs runner-up); the previous "
+    "match is the third-place playoff — its winner is third. Do not treat an "
+    "unordered LIMIT 1 winner as the champion."
+)
+
 COVERAGE_REASK = (
     "[SYSTEM] Do not infer that an event did not happen from missing, empty, "
     "truncated, or incomplete tool results. Say this dataset does not contain "
@@ -106,7 +119,8 @@ COVERAGE_REASK = (
 ANSWER_NOW_REASK = (
     "[SYSTEM] No more tool calls. Answer from the last tool result only. "
     "If it is a scored match, state the winner from home_score vs away_score. "
-    "That latest match is the tournament champion in this database. "
+    "The latest match is the tournament champion; if the user asked who came "
+    "third, name the winner of the second-latest match (third-place playoff). "
     "Do not claim an event did not happen, and do not say the winner is unknown."
 )
 
@@ -138,6 +152,12 @@ _COVERAGE_OVERCLAIM_PHRASES = (
     "last data update",
     "no se ha jugado",
     "no habría concluido",
+    "aún no ha ocurrido",
+    "aun no ha ocurrido",
+    "todavía no ha ocurrido",
+    "todavia no ha ocurrido",
+    "has not occurred",
+    "hasn't occurred",
 )
 
 
@@ -195,6 +215,20 @@ def _is_complete_result(result) -> bool:
     if "rows" in result:
         return bool(result["rows"])
     return True
+
+
+def _sql_has_unordered_limit(sql: str) -> bool:
+    """True when SQL uses LIMIT without ORDER BY (row order is arbitrary)."""
+    normalized = f" {' '.join(sql.lower().split())} "
+    return " limit " in normalized and "order by" not in normalized
+
+
+def _last_sql_has_unordered_limit(tool_info: list) -> bool:
+    for ti in reversed(tool_info):
+        if ti.get("tool") == "sql_query":
+            sql = (ti.get("args") or {}).get("sql") or ""
+            return _sql_has_unordered_limit(sql)
+    return False
 
 
 def _has_complete_result(tool_info: list) -> bool:
@@ -524,6 +558,7 @@ def run_turn_events(
     any_tool_calls_this_turn = False
     error_retry_used = False
     truncation_nudge_used = False
+    unordered_limit_nudge_used = False
     coverage_nudge_used = False
     underclaim_nudge_used = False
     last_tool_error = False
@@ -624,6 +659,19 @@ def run_turn_events(
                 history.append(
                     types.Content(
                         role="user", parts=[types.Part(text=TRUNCATION_REASK)]
+                    )
+                )
+                continue
+            if (
+                can_nudge
+                and not unordered_limit_nudge_used
+                and last_tool_info
+                and _last_sql_has_unordered_limit(last_tool_info)
+            ):
+                unordered_limit_nudge_used = True
+                history.append(
+                    types.Content(
+                        role="user", parts=[types.Part(text=UNORDERED_LIMIT_REASK)]
                     )
                 )
                 continue
