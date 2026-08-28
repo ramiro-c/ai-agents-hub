@@ -219,6 +219,10 @@ def test_system_prompt_enforces_tool_grounding():
     assert "last data update" not in CHALLENGE_REASK.lower()
 
 
+def test_system_prompt_names_third_place_playoff_stage():
+    assert "Third-place playoff" in SYSTEM_PROMPT
+
+
 def test_run_turn_grounding_nudge_forces_tool_on_factual_question(monkeypatch):
     """A text-only answer to a match question triggers ONE tool-forcing re-ask."""
     calls = []
@@ -445,6 +449,146 @@ def test_run_turn_unordered_limit_nudge_forces_order_by(monkeypatch):
     assert "ORDER BY" in fetch_calls[1][1]["sql"].upper()
     assert "Inglaterra" in answer or "England" in answer
     assert "Turquía" not in answer and "Turkey" not in answer
+    assert len(history) == 8
+
+
+_WIDE_OFFSET_SQL_BASE = (
+    "SELECT * FROM matches WHERE tournament = 'FIFA World Cup' ORDER BY match_date DESC"
+)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "expected"),
+    [
+        ("LIMIT 2 OFFSET 1", True),
+        ("OFFSET 1 LIMIT 2", True),
+        ("LIMIT 3 OFFSET 1", True),
+        ("OFFSET 1", True),
+        ("LIMIT 1 OFFSET 1", False),
+        ("LIMIT 2", False),
+        ("OFFSET 0", False),
+        ("", False),
+    ],
+)
+def test_sql_has_wide_offset(suffix, expected):
+    from soccer_agent.loop import _sql_has_wide_offset
+
+    sql = f"{_WIDE_OFFSET_SQL_BASE} {suffix}".strip()
+    assert _sql_has_wide_offset(sql) == expected
+
+
+def test_run_turn_wide_offset_nudge_requeries_third_place_stage(monkeypatch):
+    """Wide OFFSET skips the third-place row — nudge must filter by stage."""
+    fetch_calls = []
+
+    def _dispatch(name, args):
+        fetch_calls.append((name, args))
+        sql = args.get("sql", "")
+        upper = sql.upper()
+        if "THIRD-PLACE PLAYOFF" in upper:
+            return {
+                "columns": [
+                    "match_date",
+                    "home_team",
+                    "away_team",
+                    "home_score",
+                    "away_score",
+                    "winner",
+                ],
+                "rows": [
+                    ["2026-07-18", "France", "England", "4", "6", "England"],
+                ],
+            }
+        if "OFFSET" in upper:
+            return {
+                "columns": [
+                    "match_date",
+                    "home_team",
+                    "away_team",
+                    "home_score",
+                    "away_score",
+                    "winner",
+                ],
+                "rows": [
+                    ["2026-07-18", "France", "England", "4", "6", "England"],
+                    ["2026-07-15", "England", "Argentina", "2", "1", "England"],
+                ],
+            }
+        return {"columns": ["winner"], "rows": [["England"]]}
+
+    wide_sql = (
+        "SELECT match_date, home_team, away_team, home_score, away_score, winner "
+        "FROM matches WHERE tournament = 'FIFA World Cup' "
+        "AND EXTRACT(YEAR FROM match_date) = 2026 "
+        "ORDER BY match_date DESC LIMIT 2 OFFSET 1"
+    )
+    stage_sql = (
+        "SELECT match_date, home_team, away_team, home_score, away_score, winner "
+        "FROM matches WHERE tournament = 'FIFA World Cup' "
+        "AND stage = 'Third-place playoff' "
+        "AND EXTRACT(YEAR FROM match_date) = 2026"
+    )
+    monkeypatch.setattr("soccer_agent.loop.dispatch", _dispatch)
+    fake = SimpleNamespace(
+        models=FakeModels(
+            [
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": wide_sql},
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part(
+                            text=(
+                                "Inglaterra jugó contra Argentina por el "
+                                "tercer lugar, ganando 2-1."
+                            )
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part.from_function_call(
+                            name="sql_query",
+                            args={"sql": stage_sql},
+                        )
+                    ]
+                ),
+                _response(
+                    [
+                        types.Part(
+                            text=(
+                                "Inglaterra jugó contra Francia por el tercer "
+                                "lugar, perdiendo 4-6 el 18 de julio."
+                            )
+                        )
+                    ]
+                ),
+            ]
+        )
+    )
+
+    answer, history, steps = run_turn(
+        fake,
+        [],
+        "¿Contra quién jugó Inglaterra por el tercer lugar en 2026?",
+        model="test",
+    )
+
+    from soccer_agent.loop import WIDE_OFFSET_REASK
+
+    assert WIDE_OFFSET_REASK in _model_call_text(fake, 2)
+    assert len(fetch_calls) == 2
+    first_sql = fetch_calls[0][1]["sql"].upper()
+    assert "OFFSET" in first_sql
+    assert "LIMIT 2" in first_sql
+    assert "THIRD-PLACE PLAYOFF" in fetch_calls[1][1]["sql"].upper()
+    assert "Francia" in answer or "France" in answer
+    assert "Argentina" not in answer
     assert len(history) == 8
 
 

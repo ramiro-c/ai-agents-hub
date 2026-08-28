@@ -1,0 +1,22 @@
+{
+  "Results": [
+    {
+      "LocalDate": "2026-07-18T20:00:00",
+      "StageName": [{"Description": "Bronze final"}],
+      "Home": {"TeamName": [{"Description": "France"}]},
+      "Away": {"TeamName": [{"Description": "England"}]}
+    },
+    {
+      "LocalDate": "2026-07-15T20:00:00",
+      "StageName": [{"Description": "Semi-final"}],
+      "Home": {"TeamName": [{"Description": "England"}]},
+      "Away": {"TeamName": [{"Description": "Argentina"}]}
+    },
+    {
+      "LocalDate": "2026-06-11T18:00:00",
+      "StageName": [{"Description": "First Stage"}],
+      "Home": {"TeamName": [{"Description": "USA"}]},
+      "Away": {"TeamName": [{"Description": "Paraguay"}]}
+    }
+  ]
+}
