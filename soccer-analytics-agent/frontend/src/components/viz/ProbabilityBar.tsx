@@ -19,7 +19,7 @@ export function ProbabilityBar({ data, variant }: Props) {
     <div className={`space-y-2 ${isHero ? "p-3" : ""}`}>
       {isHero && (
         <p className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-          Match prediction
+          Predicción
         </p>
       )}
 
@@ -35,7 +35,7 @@ export function ProbabilityBar({ data, variant }: Props) {
         <div
           className="bg-amber-d/70 transition-all duration-300"
           style={{ width: `${draw * 100}%` }}
-          title={`Draw: ${pct(draw)}`}
+          title={`Empate: ${pct(draw)}`}
         />
         <div
           className="bg-red-l/70 transition-all duration-300"

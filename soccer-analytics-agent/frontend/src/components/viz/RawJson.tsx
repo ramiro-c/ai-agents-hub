@@ -5,7 +5,7 @@ interface Props {
   label?: string;
 }
 
-export function RawJson({ data, label = "Raw JSON" }: Props) {
+export function RawJson({ data, label = "JSON" }: Props) {
   const [open, setOpen] = useState(false);
 
   return (

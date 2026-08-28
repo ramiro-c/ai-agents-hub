@@ -24,7 +24,7 @@ export function MessageBubble({ message }: Props) {
     >
       {/* Label */}
       <span className="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-fg-faint">
-        {isUser ? "You" : "Agent"}
+        {isUser ? "Vos" : "Agente"}
       </span>
 
       {/* Bubble */}
@@ -43,7 +43,7 @@ export function MessageBubble({ message }: Props) {
           <>
             {isThinking ? (
               <span className="flex items-center gap-1.5 text-[14px] text-fg-dim">
-                <span className="animate-pulse">Thinking</span>
+                <span className="animate-pulse">Pensando</span>
                 <span className="animate-pulse">…</span>
               </span>
             ) : (

@@ -14,7 +14,7 @@ export function ResultList({ data, variant }: Props) {
   const { results } = data;
 
   if (results.length === 0) {
-    return <p className="text-[12px] text-fg-dim">No matches found.</p>;
+    return <p className="text-[12px] text-fg-dim">No hay resultados.</p>;
   }
 
   return (
@@ -27,17 +27,17 @@ export function ResultList({ data, variant }: Props) {
           {/* Score indicator */}
           <div className="mb-1 flex items-center justify-between">
             <span className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-              {variant === "hybrid" ? "Hybrid" : "Vector"} match
+              {variant === "hybrid" ? "Búsqueda híbrida" : "Búsqueda vectorial"}
             </span>
             <div className="flex items-center gap-2 font-mono text-[11px] text-fg-dim">
               {variant === "hybrid" && item.vector_distance !== undefined && (
-                <span title="Vector distance" className="text-fg-faint">
+                <span title="Distancia vectorial" className="text-fg-faint">
                   vec: {(1 - item.vector_distance).toFixed(3)}
                 </span>
               )}
               {variant === "vector" && item.distance !== undefined && (
                 <span
-                  title="Similarity score"
+                  title="Similitud"
                   className="text-accent"
                 >
                   score: {(1 - item.distance).toFixed(3)}
@@ -45,7 +45,7 @@ export function ResultList({ data, variant }: Props) {
               )}
               {variant === "hybrid" && item.rank !== undefined && (
                 <span
-                  title="RRF rank"
+                  title="Ranking RRF"
                   className="text-accent"
                 >
                   rank: #{item.rank}

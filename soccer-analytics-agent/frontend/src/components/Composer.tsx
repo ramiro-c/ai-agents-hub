@@ -52,7 +52,7 @@ export function Composer({ busy, onSend }: Props) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask about matches, teams, Elo ratings…"
+        placeholder="Preguntá por partidos, selecciones, Elo…"
         disabled={busy}
         rows={1}
         className="flex-1 resize-none rounded-lg border border-line-soft bg-bg px-3 py-2 text-[14px] text-fg placeholder:text-fg-faint focus:border-accent focus:outline-none disabled:opacity-50"
@@ -62,7 +62,7 @@ export function Composer({ busy, onSend }: Props) {
         disabled={busy || !trimmed}
         className="rounded-lg bg-accent px-4 py-2 text-[14px] font-semibold text-ink transition-colors hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {busy ? "…" : "Send"}
+        {busy ? "…" : "Enviar"}
       </button>
     </form>
   );

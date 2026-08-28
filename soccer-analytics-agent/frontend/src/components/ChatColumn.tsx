@@ -40,11 +40,11 @@ export function ChatColumn({ messages, busy, onSend }: Props) {
         {showThinking && (
           <div className="flex flex-col items-start">
             <span className="mb-1 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-fg-faint">
-              Agent
+              Agente
             </span>
             <div className="rounded-bl-md rounded-2xl border border-line-soft bg-surface px-4 py-3">
               <span className="animate-pulse text-[14px] text-fg-dim">
-                Thinking…
+                Pensando…
               </span>
             </div>
           </div>

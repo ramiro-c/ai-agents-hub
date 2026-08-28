@@ -15,14 +15,14 @@ export function FormTiles({ data }: Props) {
 
   if (form.length === 0) {
     return (
-      <p className="text-[12px] text-fg-dim">No recent matches for {team}.</p>
+      <p className="text-[12px] text-fg-dim">No hay partidos recientes de {team}.</p>
     );
   }
 
   return (
     <div className="space-y-2">
       <p className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-        {team} — last {form.length} matches
+        {team} — últimos {form.length} partidos
       </p>
       <div className="flex flex-wrap gap-2">
         {form.map((match, i) => (

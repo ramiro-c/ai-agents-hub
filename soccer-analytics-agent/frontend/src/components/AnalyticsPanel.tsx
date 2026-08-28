@@ -19,13 +19,13 @@ export function AnalyticsPanel({ snapshot }: Props) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
         <p className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-          Analytics Panel
+          Panel de estadísticas
         </p>
         <p className="text-[13px] text-fg-dim">
-          No analytics data yet.
+          Todavía no hay estadísticas.
         </p>
         <p className="text-[11px] text-fg-faint">
-          Ask the agent to predict a match or look up team stats.
+          Pedile al agente una predicción o los números de una selección.
         </p>
       </div>
     );
@@ -34,7 +34,7 @@ export function AnalyticsPanel({ snapshot }: Props) {
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
       <p className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-        Analytics Panel
+        Panel de estadísticas
       </p>
 
       {/* Subject teams */}
@@ -65,7 +65,7 @@ export function AnalyticsPanel({ snapshot }: Props) {
       {snapshot.elos.length > 0 && (
         <section>
           <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-            Elo Ratings
+            Elo
           </p>
           {snapshot.elos.map((elo, i) => (
             <EloGauges key={i} data={elo} />
@@ -77,7 +77,7 @@ export function AnalyticsPanel({ snapshot }: Props) {
       {snapshot.forms.length > 0 && (
         <section>
           <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-            Recent Form
+            Forma reciente
           </p>
           {snapshot.forms.map((form, i) => (
             <FormTiles key={i} data={form} />
@@ -89,7 +89,7 @@ export function AnalyticsPanel({ snapshot }: Props) {
       {snapshot.h2h.length > 0 && (
         <section>
           <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-            Head-to-Head
+            Historial
           </p>
           {snapshot.h2h.map((h2h, i) => (
             <H2HRecord key={i} data={h2h} />

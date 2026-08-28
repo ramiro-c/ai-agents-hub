@@ -146,7 +146,7 @@ export default function App() {
                 }
                 updateAssistant((m) => ({
                   ...m,
-                  text: "Session expired. A new session has been created. Please try your message again.",
+                  text: "La sesión expiró. Se creó una nueva. Probá de nuevo el mensaje.",
                   isError: true,
                 }));
               } else if (ev.status === 429) {
@@ -154,7 +154,7 @@ export default function App() {
                 // raw provider error, regardless of the backend detail string.
                 updateAssistant((m) => ({
                   ...m,
-                  text: "The service is receiving too many requests right now. Please wait a few seconds and try again.",
+                  text: "Hay demasiadas consultas ahora. Esperá unos segundos y volvé a intentar.",
                   isError: true,
                 }));
               } else {
@@ -172,7 +172,7 @@ export default function App() {
         const errorText =
           err instanceof Error
             ? err.message
-            : "An unexpected error occurred. Please try again.";
+            : "Pasó un error inesperado. Volvé a intentar.";
         updateAssistant((m) => ({ ...m, text: errorText, isError: true }));
       } finally {
         if (streamAbortRef.current === ctrl) {
@@ -198,7 +198,7 @@ export default function App() {
               Soccer Analytics Agent
             </h1>
             <p className="hidden font-mono text-[10.5px] tracking-wide text-fg-faint sm:block">
-              Gemini ({geminiModel}) · Postgres + pgvector · 49K matches
+              Gemini ({geminiModel}) · Postgres + pgvector · 49 mil partidos
             </p>
           </div>
         </div>
@@ -207,7 +207,7 @@ export default function App() {
             title={sessionId}
             className="hidden select-all font-mono text-[10.5px] text-fg-faint sm:inline"
           >
-            session {sessionId.slice(0, 8)}
+            sesión {sessionId.slice(0, 8)}
           </span>
           <span className="hidden sm:inline-flex">
             <HealthPill status={healthStatus} />
@@ -227,7 +227,7 @@ export default function App() {
             disabled={busy}
             className="rounded-lg border border-line-soft bg-surface px-3 py-1.5 text-[12px] text-fg-dim transition-colors hover:border-accent hover:text-fg disabled:opacity-40"
           >
-            New Chat
+            Nuevo chat
           </button>
         </div>
       </header>

@@ -109,7 +109,7 @@ function ToolCard({ call }: { call: ToolCall }) {
           visual
         ) : (
           <p className="font-mono text-[11px] text-fg-dim">
-            Result available — expand raw JSON.
+            Resultado disponible: abrí el JSON.
           </p>
         )}
       </div>
@@ -132,7 +132,7 @@ function ToolTraceBase({ trace }: Props) {
   return (
     <div className="mt-3 grid min-w-0 gap-2">
       <div className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-fg-faint">
-        {trace.length} tool {trace.length > 1 ? "calls" : "call"}
+        {trace.length} {trace.length === 1 ? "herramienta" : "herramientas"}
       </div>
       {trace.map((call, i) => (
         <ToolCard key={`${call.name}-${i}`} call={call} />

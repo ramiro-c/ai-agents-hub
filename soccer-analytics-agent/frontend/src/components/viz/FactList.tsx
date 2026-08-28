@@ -11,7 +11,7 @@ export function FactList({ data }: Props) {
   const shown = expanded ? facts : facts.slice(0, 10);
 
   if (facts.length === 0) {
-    return <p className="text-[12px] text-fg-dim">No facts recalled.</p>;
+    return <p className="text-[12px] text-fg-dim">No se recuperaron hechos.</p>;
   }
 
   return (
@@ -32,7 +32,7 @@ export function FactList({ data }: Props) {
           onClick={() => setExpanded(true)}
           className="mt-2 font-mono text-[11px] text-accent hover:text-accent-dim"
         >
-          Show all {facts.length} facts
+          Ver los {facts.length} hechos
         </button>
       )}
     </div>

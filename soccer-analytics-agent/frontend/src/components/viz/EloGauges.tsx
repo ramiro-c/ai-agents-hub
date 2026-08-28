@@ -10,7 +10,7 @@ export function EloGauges({ data }: Props) {
   const entries = Object.entries(elos);
 
   if (entries.length === 0) {
-    return <p className="text-[12px] text-fg-dim">No Elo data available.</p>;
+    return <p className="text-[12px] text-fg-dim">No hay datos de Elo.</p>;
   }
 
   return (
@@ -34,7 +34,7 @@ export function EloGauges({ data }: Props) {
               />
             </div>
             <p className="font-mono text-[10.5px] text-fg-faint">
-              {entry.matches_played} matches played
+              {entry.matches_played} partidos jugados
             </p>
           </div>
         );

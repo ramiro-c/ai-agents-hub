@@ -14,7 +14,7 @@ export function H2HRecord({ data }: Props) {
   if (!last_matches || last_matches.length === 0) {
     return (
       <p className="text-[12px] text-fg-dim">
-        No head-to-head matches between {team1} and {team2}.
+        No hay partidos entre {team1} y {team2}.
       </p>
     );
   }
@@ -51,7 +51,7 @@ export function H2HRecord({ data }: Props) {
       {/* Recent matches (last 5) */}
       <div className="space-y-1">
         <p className="font-mono text-[10.5px] uppercase tracking-wide text-fg-faint">
-          Recent ({total} total)
+          Recientes ({total} en total)
         </p>
         {last_matches.slice(0, 5).map((m, i) => (
           <div

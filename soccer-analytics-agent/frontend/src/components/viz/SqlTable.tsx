@@ -9,7 +9,7 @@ export function SqlTable({ data }: Props) {
   const shown = rows.slice(0, 8);
 
   if (columns.length === 0) {
-    return <p className="text-[12px] text-fg-dim">No results.</p>;
+    return <p className="text-[12px] text-fg-dim">Sin resultados.</p>;
   }
 
   return (
@@ -34,7 +34,7 @@ export function SqlTable({ data }: Props) {
                 colSpan={columns.length}
                 className="px-2.5 py-3 text-center text-fg-faint"
               >
-                No rows returned.
+                Sin filas.
               </td>
             </tr>
           ) : (
@@ -55,7 +55,7 @@ export function SqlTable({ data }: Props) {
       </table>
       {rows.length > shown.length && (
         <p className="px-2.5 py-1.5 font-mono text-[10.5px] text-fg-faint">
-          +{rows.length - shown.length} more rows
+          +{rows.length - shown.length} filas más
         </p>
       )}
     </div>

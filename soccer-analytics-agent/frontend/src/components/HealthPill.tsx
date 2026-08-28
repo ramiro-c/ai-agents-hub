@@ -1,9 +1,9 @@
 import type { HealthStatus } from "../lib/types";
 
 const LABEL: Record<HealthStatus, string> = {
-  healthy: "Backend connected",
-  unhealthy: "Backend unreachable",
-  connecting: "Connecting…",
+  healthy: "Backend conectado",
+  unhealthy: "Backend no disponible",
+  connecting: "Conectando…",
 };
 
 const DOT: Record<HealthStatus, string> = {
