@@ -1,9 +1,10 @@
 const CHIPS = [
-  "Who won the 2022 World Cup?",
-  "What's Argentina's Elo rating?",
-  "Predict Argentina vs France",
-  "Show me Brazil's last 5 matches",
-  "Head-to-head: Argentina vs Germany",
+  "¿Quién ganó el Mundial 2026?",
+  "¿Cuál es el Elo de Argentina?",
+  "Predice España vs Argentina",
+  "Últimos 5 partidos de Argentina",
+  "Historial Argentina vs España",
+  "¿Quién salió tercero en 2026?",
 ];
 
 interface Props {
@@ -15,15 +16,14 @@ export function EmptyHero({ onPick }: Props) {
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-12">
       <div className="text-center">
         <h2 className="text-xl font-semibold text-fg">
-          Ask me about international football
+          Preguntame de fútbol internacional
         </h2>
         <p className="mt-2 text-[14px] text-fg-dim">
-          Ask about matches, teams, Elo ratings, predictions, and head-to-head
-          records
+          Partidos, selecciones, Elo, predicciones e historiales
         </p>
       </div>
 
-      <div className="flex max-w-lg flex-wrap justify-center gap-2">
+      <div className="flex max-w-xl flex-wrap justify-center gap-2">
         {CHIPS.map((chip) => (
           <button
             key={chip}
