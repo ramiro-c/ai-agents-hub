@@ -1,5 +1,6 @@
 """Hand-written agent loop: model -> tool calls -> tool results -> model."""
 
+import re
 import time
 from functools import lru_cache
 
@@ -41,17 +42,22 @@ SYSTEM_PROMPT = (
     "year filtering, ILIKE for case-insensitive text, LIMIT to cap rows, and "
     "proper date literals (DATE '2022-12-18'). "
     "The matches table has columns home_team, away_team, home_score, away_score, "
-    "winner (derived from the score, or from shootouts on a draw). "
+    "winner (derived from the score, or from shootouts on a draw), and stage. "
+    "Canonical stage values include Final, Semi-finals, Third-place playoff, "
+    "Quarter-finals, Round of 16, Round of 32, and Group stage; many historical "
+    "rows have NULL stage. "
     "For 'latest', 'most recent', or tournament-winner "
     "questions, always ORDER BY match_date DESC before LIMIT so you see the "
     "newest match, not the oldest. Never use LIMIT without ORDER BY match_date "
     "— an unordered LIMIT 1 returns an arbitrary match, not the champion. "
     "The newest scored match of a tournament in "
-    "a given year is that tournament's final in this database (there is no "
-    "stage column). The team that won that match is the champion — name it. "
-    "Podium: that final's loser is runner-up; the previous match is the "
-    "third-place playoff and its winner is third. For third place, "
-    "ORDER BY match_date DESC LIMIT 2 and read the second row. "
+    "a given year is that tournament's final in this database. The team that "
+    "won that match is the champion — name it. "
+    "Podium: when stage is set, filter by stage — third place is the "
+    "Third-place playoff row (rival = home vs away on that row); use "
+    "AND stage = 'Final' or AND stage = 'Semi-finals' similarly. "
+    "When stage is NULL, use ORDER BY match_date DESC LIMIT 2 with no OFFSET "
+    "(second row = third-place playoff). Never use LIMIT 2 OFFSET 1. "
     "Tournament values are 'FIFA World Cup' "
     "(finals) and 'FIFA World Cup qualification' (qualifiers): for World Cup "
     "results use exact equality tournament = 'FIFA World Cup' or exclude "
@@ -107,6 +113,13 @@ UNORDERED_LIMIT_REASK = (
     "unordered LIMIT 1 winner as the champion."
 )
 
+WIDE_OFFSET_REASK = (
+    "[SYSTEM] The last sql_query used OFFSET with LIMIT > 1 (or OFFSET alone), "
+    "which skips rows. Do not use OFFSET with LIMIT > 1. Re-query with "
+    "WHERE stage = 'Third-place playoff' (opponent = the other team on that "
+    "row). If stage is NULL, use ORDER BY match_date DESC LIMIT 2 with no OFFSET."
+)
+
 COVERAGE_REASK = (
     "[SYSTEM] Do not infer that an event did not happen from missing, empty, "
     "truncated, or incomplete tool results. Say this dataset does not contain "
@@ -120,7 +133,8 @@ ANSWER_NOW_REASK = (
     "[SYSTEM] No more tool calls. Answer from the last tool result only. "
     "If it is a scored match, state the winner from home_score vs away_score. "
     "The latest match is the tournament champion; if the user asked who came "
-    "third, name the winner of the second-latest match (third-place playoff). "
+    "third, use the Third-place playoff row when stage is set (opponent = the "
+    "other team on that row); otherwise the second-latest match. "
     "Do not claim an event did not happen, and do not say the winner is unknown."
 )
 
@@ -228,6 +242,29 @@ def _last_sql_has_unordered_limit(tool_info: list) -> bool:
         if ti.get("tool") == "sql_query":
             sql = (ti.get("args") or {}).get("sql") or ""
             return _sql_has_unordered_limit(sql)
+    return False
+
+
+def _sql_has_wide_offset(sql: str) -> bool:
+    """True when SQL uses OFFSET > 0 with no LIMIT or with LIMIT > 1."""
+    normalized = f" {' '.join(sql.lower().split())} "
+    offset_match = re.search(r"\boffset\s+(\d+)\b", normalized)
+    if not offset_match:
+        return False
+    offset_val = int(offset_match.group(1))
+    if offset_val <= 0:
+        return False
+    limit_match = re.search(r"\blimit\s+(\d+)\b", normalized)
+    if not limit_match:
+        return True
+    return int(limit_match.group(1)) > 1
+
+
+def _last_sql_has_wide_offset(tool_info: list) -> bool:
+    for ti in reversed(tool_info):
+        if ti.get("tool") == "sql_query":
+            sql = (ti.get("args") or {}).get("sql") or ""
+            return _sql_has_wide_offset(sql)
     return False
 
 
@@ -559,6 +596,7 @@ def run_turn_events(
     error_retry_used = False
     truncation_nudge_used = False
     unordered_limit_nudge_used = False
+    wide_offset_nudge_used = False
     coverage_nudge_used = False
     underclaim_nudge_used = False
     last_tool_error = False
@@ -672,6 +710,19 @@ def run_turn_events(
                 history.append(
                     types.Content(
                         role="user", parts=[types.Part(text=UNORDERED_LIMIT_REASK)]
+                    )
+                )
+                continue
+            if (
+                can_nudge
+                and not wide_offset_nudge_used
+                and last_tool_info
+                and _last_sql_has_wide_offset(last_tool_info)
+            ):
+                wide_offset_nudge_used = True
+                history.append(
+                    types.Content(
+                        role="user", parts=[types.Part(text=WIDE_OFFSET_REASK)]
                     )
                 )
                 continue

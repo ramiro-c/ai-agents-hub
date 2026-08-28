@@ -418,7 +418,7 @@ TOOL_DECLARATIONS = [
             "case-insensitive text use ILIKE (e.g. tournament ILIKE '%world cup%'). "
             "Tables: "
             "matches(match_date, home_team, away_team, home_score, away_score, "
-            "winner, tournament, city, country, neutral), "
+            "winner, tournament, stage, city, country, neutral), "
             "goalscorers(match_date, home_team, away_team, team, scorer, minute, "
             "own_goal, penalty), "
             "shootouts(match_date, home_team, away_team, winner, first_shooter), "
@@ -428,7 +428,9 @@ TOOL_DECLARATIONS = [
             "or ORDER BY ... LIMIT — do not conclude coverage from a "
             "truncated sample. "
             "Never LIMIT without ORDER BY match_date; unordered LIMIT returns an "
-            "arbitrary row. For tournament podium: ORDER BY match_date DESC LIMIT 2 "
+            "arbitrary row. For tournament podium: when stage is set, filter "
+            "stage = 'Third-place playoff' for third place; never LIMIT 2 OFFSET 1. "
+            "When stage is NULL: ORDER BY match_date DESC LIMIT 2 with no OFFSET "
             "(last match = final, previous = third-place playoff)."
         ),
         "parameters": {
